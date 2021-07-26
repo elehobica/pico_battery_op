@@ -21,6 +21,7 @@ typedef enum {
 } power_mode_t;
 
 static ssd1306_t disp;
+static power_mode_t power_mode_prev = NormalMode;
 static power_mode_t power_mode = NormalMode;
 static bool peri_power_prev = false;
 
@@ -77,67 +78,74 @@ int main()
         // Monitor
         uint16_t battery_voltage = pm_get_battery_voltage();
 
-        // Control
-        button_action_t btn_act;
-        if (pm_get_btn_evt(&btn_act)) {
-            switch (btn_act) {
-                case ButtonPowerLong:
-                    if (power_mode == ChargeMode) {
-                        power_mode = NormalMode;
-                        mode_count = 0;
+        // Mode Transition
+        switch (power_mode) {
+            case NormalMode:
+                pm_set_power_keep(true);
+                if (pm_get_low_battery()) {
+                    power_mode = ShutdownMode;
+                }
+                if (mode_count == 0) {
+                    pm_set_peripheral_power(true);
+                }
+                // User Control Action
+                button_action_t btn_act;
+                if (pm_get_btn_evt(&btn_act)) {
+                    switch (btn_act) {
+                        case ButtonPowerLongLong:
+                            power_mode = ShutdownMode;
+                            break;
+                        case ButtonUserLongLong:
+                            power_mode = DormantMode;
+                            break;
+                        case ButtonUserSingle:
+                            pm_set_peripheral_power(!pm_get_peripheral_power());
+                            break;
+                        default:
+                            break;
                     }
-                    break;
-                case ButtonPowerLongLong:
-                    if (power_mode == NormalMode) {
-                        power_mode = ShutdownMode;
-                        mode_count = 0;
+                }
+                pm_clear_btn_evt();
+                break;
+            case DormantMode:
+                if (mode_count >= 30) {
+                    if (pm_get_peripheral_power()) {
+                        display_deinit();
+                        pm_set_peripheral_power(false);
                     }
-                    break;
-                case ButtonUserLongLong:
-                    if (power_mode == NormalMode) {
-                        power_mode = DormantMode;
-                        mode_count = 0;
+                    peri_power_prev = false;
+                    pm_enter_dormant_and_wake();
+                    pm_set_peripheral_power(true);
+                    power_mode = NormalMode;
+                }
+                break;
+            case ShutdownMode:
+                if (mode_count >= 30) {
+                    power_mode = ChargeMode;
+                }
+                break;
+            case ChargeMode: // same as dormant to minimize active power besides pm_set_power_keep(false)
+                pm_set_power_keep(false);
+                if (mode_count >= 30) {
+                    if (pm_get_peripheral_power()) {
+                        display_deinit();
+                        pm_set_peripheral_power(false);
                     }
-                    break;
-                case ButtonUserSingle:
-                    if (power_mode == NormalMode) {
-                        pm_set_peripheral_power(!pm_get_peripheral_power());
-                    }
-                    break;
-                default:
-                    break;
-            }
+                    peri_power_prev = false;
+                    pm_enter_dormant_and_wake();
+                    pm_set_peripheral_power(true);
+                    power_mode = NormalMode;
+                }
+                break;
+            default:
+                break;
         }
-        if (power_mode == NormalMode && pm_get_low_battery()) {
-            power_mode = ShutdownMode;
+        if (power_mode_prev == power_mode) {
+            mode_count++;
+        } else {
             mode_count = 0;
         }
-        if (power_mode == NormalMode && mode_count == 0) {
-            pm_set_power_keep(true);
-            pm_set_peripheral_power(true);
-            gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        } else if (power_mode == DormantMode && mode_count >= 30) {
-            if (pm_get_peripheral_power()) {
-                display_deinit();
-                pm_set_peripheral_power(false);
-            }
-            peri_power_prev = false;
-            gpio_put(PICO_DEFAULT_LED_PIN, 0);
-            pm_enter_dormant_and_wake();
-            pm_set_peripheral_power(true);
-            power_mode = NormalMode;
-            mode_count = 0;
-        } else if (power_mode == ShutdownMode && mode_count >= 30) {
-            pm_set_power_keep(false);
-            power_mode = ChargeMode;
-            mode_count = 0;
-        } else if (power_mode == ChargeMode) {
-            pm_set_power_keep(false);
-            if (mode_count >= 30) {
-                pm_set_peripheral_power(false);
-            }
-        }
-        mode_count++;
+        power_mode_prev = power_mode;
 
         // Display (SSD1306 powered by Peripheral Power)
         bool peri_power = pm_get_peripheral_power();
@@ -194,7 +202,6 @@ int main()
             ssd1306_show(&disp);
         }
         peri_power_prev = peri_power;
-        pm_clear_btn_evt();
 
         // Main Process (Do something here)
         if (power_mode == NormalMode) {

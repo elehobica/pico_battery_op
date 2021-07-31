@@ -14,15 +14,15 @@
 #include "power_management.h"
 
 typedef enum {
-    NormalMode = 0,
-    DormantMode,
-    ShutdownMode,
-    ChargeMode
-} power_mode_t;
+    NormalState = 0,
+    DeepSleepState,
+    ShutdownState,
+    ChargeState
+} power_state_t;
 
 static ssd1306_t disp;
-static power_mode_t power_mode_prev = NormalMode;
-static power_mode_t power_mode = NormalMode;
+static power_state_t power_state_prev = NormalState;
+static power_state_t power_state = NormalState;
 static bool peri_power_prev = false;
 
 static inline uint32_t _millis(void)
@@ -66,9 +66,9 @@ int main()
 
     sleep_ms(100);
     if (pm_usb_power_detected()) {
-        power_mode = ChargeMode;
+        power_state = ChargeState;
     } else {
-        power_mode = NormalMode;
+        power_state = NormalState;
     }
     pm_set_peripheral_power(true);
 
@@ -79,11 +79,11 @@ int main()
         uint16_t battery_voltage = pm_get_battery_voltage();
 
         // Mode Transition
-        switch (power_mode) {
-            case NormalMode:
+        switch (power_state) {
+            case NormalState:
                 pm_set_power_keep(true);
                 if (pm_get_low_battery()) {
-                    power_mode = ShutdownMode;
+                    power_state = ShutdownState;
                 }
                 if (mode_count == 0) {
                     pm_set_peripheral_power(true);
@@ -93,10 +93,10 @@ int main()
                 if (pm_get_btn_evt(&btn_act)) {
                     switch (btn_act) {
                         case ButtonPowerLongLong:
-                            power_mode = ShutdownMode;
+                            power_state = ShutdownState;
                             break;
                         case ButtonUserLongLong:
-                            power_mode = DormantMode;
+                            power_state = DeepSleepState;
                             break;
                         case ButtonUserSingle:
                             pm_set_peripheral_power(!pm_get_peripheral_power());
@@ -107,7 +107,7 @@ int main()
                 }
                 pm_clear_btn_evt();
                 break;
-            case DormantMode:
+            case DeepSleepState:
                 if (mode_count >= 30) {
                     if (pm_get_peripheral_power()) {
                         display_deinit();
@@ -116,15 +116,15 @@ int main()
                     peri_power_prev = false;
                     pm_enter_dormant_and_wake();
                     pm_set_peripheral_power(true);
-                    power_mode = NormalMode;
+                    power_state = NormalState;
                 }
                 break;
-            case ShutdownMode:
+            case ShutdownState:
                 if (mode_count >= 30) {
-                    power_mode = ChargeMode;
+                    power_state = ChargeState;
                 }
                 break;
-            case ChargeMode: // same as dormant to minimize active power besides pm_set_power_keep(false)
+            case ChargeState: // same as dormant to minimize active power besides pm_set_power_keep(false)
                 pm_set_power_keep(false);
                 if (mode_count >= 30) {
                     if (pm_get_peripheral_power()) {
@@ -134,18 +134,18 @@ int main()
                     peri_power_prev = false;
                     pm_enter_dormant_and_wake();
                     pm_set_peripheral_power(true);
-                    power_mode = NormalMode;
+                    power_state = NormalState;
                 }
                 break;
             default:
                 break;
         }
-        if (power_mode_prev == power_mode) {
+        if (power_state_prev == power_state) {
             mode_count++;
         } else {
             mode_count = 0;
         }
-        power_mode_prev = power_mode;
+        power_state_prev = power_state;
 
         // Display (SSD1306 powered by Peripheral Power)
         bool peri_power = pm_get_peripheral_power();
@@ -159,7 +159,7 @@ int main()
             char str[64];
             ssd1306_clear(&disp);
             ssd1306_draw_string(&disp, 8*0, 8*0, 1, (char *) "Battery Op. Demo");
-            if (power_mode == ChargeMode) {
+            if (power_state == ChargeState) {
                 if (pm_usb_power_detected()) {
                     if ((mode_count % 10) < 5) {
                         ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char *) "Charging");
@@ -179,11 +179,11 @@ int main()
                 } else {
                     ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char *) "Peri. Power: OFF");
                 }
-                if (power_mode == DormantMode) {
+                if (power_state == DeepSleepState) {
                     if ((mode_count % 10) < 5) {
                         ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char *) "GO DORMANT");
                     }
-                } else if (power_mode == ShutdownMode) {
+                } else if (power_state == ShutdownState) {
                     if ((mode_count % 10) < 5) {
                         if (pm_get_low_battery()) {
                             ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char *) "LOW BATTERY");
@@ -204,7 +204,7 @@ int main()
         peri_power_prev = peri_power;
 
         // Main Process (Do something here)
-        if (power_mode == NormalMode) {
+        if (power_state == NormalState) {
             gpio_xor_mask(1UL<<PICO_DEFAULT_LED_PIN);
         } else {
             gpio_put(PICO_DEFAULT_LED_PIN, 0);

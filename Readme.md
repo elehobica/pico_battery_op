@@ -14,7 +14,7 @@ This project supports:
 ## Supported Board and Peripheral Devices
 * Raspberry Pi Pico
 * SSD1306 OLED display 128x64 pixels
-* TP4056 Project (Li-po battery chargeer)
+* TP4056 Project (Li-po battery charger)
 
 ## Power state description
 ### Power state transition diagram
@@ -49,13 +49,21 @@ This project supports:
 * Firmware update is also available in this state
 
 ## Schematic
-optimized version with SMD devices
+* optimized version with SMD devices
 
 [RPi_Pico_battery_operation.pdf](doc/RPi_Pico_battery_operation.pdf)
 
-Alternative schematic for the case non-SMD devices are desirable for bread board test
+* Alternative schematic for the case non-SMD devices are desirable for bread board test
 
 [RPi_Pico_battery_operation_breadboard.pdf](doc/RPi_Pico_battery_operation_breadboard.pdf)
+
+### comments for schematic
+* T1 switches battery power to be used only when USB is unplugged. Please refer to "Using a Battery Charger" section of [pico-datasheet.pdf](https://datasheets.raspberrypi.org/pico/pico-datasheet.pdf)
+* T2 controls EN signal of DC/DC converter on Raspberry Pi Pico Board. To enable DC/DC converter, EN signal needs to be High by switching T2 off.
+  T2 is on in Stand-by and gets off when power switch is pushed or USB is plugged or POWER_KEEP signal gets High.
+* While USB unplugged, VBUS voltage can be around 0.8V by battery power through reverse current from Shottky diode on Raspberry Pi Pico Board.
+  That is why voltage divider (R4 and R5) is needed at Gate of T4 to keep T4 off while USB unplugged.
+* T1 and T5 (P-ch MOSFET) are used as Hi-side switches. To drive Raspberry Pi Pico and peripheral devices in stable, those P-ch MOSFETs should be choosed as low On-Resistance (~0.1ohm).
 
 ## How to build
 * See ["Getting started with Raspberry Pi Pico"](https://datasheets.raspberrypi.org/pico/getting-started-with-pico.pdf)

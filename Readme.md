@@ -35,8 +35,9 @@ This project supports:
 * transition to Shutdown state by power switch long push or low battery detected
 
 ### DeepSleep state
-* achieved by dormant state served in pico-sdk
-* power consumption is around 5 mW
+* achieved by dormant mode served in pico-sdk
+* to disable peripheral power minimizes power consumption in DeepSleep state
+* power consumption is around 5 mW (under peripheral power off)
 * transition to Normal state by power switch single push
 
 ### Shutdown state
@@ -57,7 +58,7 @@ This project supports:
 
 [RPi_Pico_battery_operation_breadboard.pdf](doc/RPi_Pico_battery_operation_breadboard.pdf)
 
-### comments for schematic
+### Comments for schematic
 * T1 switches battery power to be used only when USB is unplugged. Please refer to "Using a Battery Charger" section of [pico-datasheet.pdf](https://datasheets.raspberrypi.org/pico/pico-datasheet.pdf)
 * T2 controls EN signal of DC/DC converter on Raspberry Pi Pico Board. To enable DC/DC converter, EN signal needs to be High by switching T2 off.
   T2 is on in Stand-by and gets off when power switch is pushed or USB is plugged or POWER_KEEP signal gets High.

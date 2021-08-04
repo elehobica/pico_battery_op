@@ -64,7 +64,7 @@ This project supports:
   T2 is on in Stand-by and gets off when power switch is pushed or USB is plugged or POWER_KEEP signal gets High.
 * While USB unplugged, VBUS voltage can be around 0.8V by battery power through reverse current from Shottky diode on Raspberry Pi Pico Board.
   That is why voltage divider (R4 and R5) is needed at Gate of T4 to keep T4 off while USB unplugged.
-* T1 and T5 (P-ch MOSFET) are used as Hi-side switches. To drive Raspberry Pi Pico and peripheral devices in stable, those P-ch MOSFETs should be choosed as low On-Resistance (~0.1ohm).
+* T1 and T5 (P-ch MOSFET) are used as Hi-side switches. To drive Raspberry Pi Pico and peripheral devices in stable, those P-ch MOSFETs should be choosed as low On-Resistance (~0.1ohm) and low threshold voltage (~2.5V).
 
 ## How to build
 * See ["Getting started with Raspberry Pi Pico"](https://datasheets.raspberrypi.org/pico/getting-started-with-pico.pdf)

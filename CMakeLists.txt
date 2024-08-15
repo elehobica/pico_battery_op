@@ -1,10 +1,9 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.13)
 
-set(PICO_SDK_PATH ${CMAKE_CURRENT_LIST_DIR}/../pico-sdk)
-include(pico_sdk_import.cmake)
-include(pico_extras_import.cmake)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+include($ENV{PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
 
-set(project_name "pico_battery_op")
+set(project_name "pico_battery_op" C CXX)
 project(${project_name})
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -12,9 +11,9 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_subdirectory(lib/pico-ssd1306)
-add_subdirectory(lib/my_pico_stdio_usb)
+add_subdirectory(lib/pico_stdio_usb_revised)
 
-set(bin_name "pico_battery_op")
+set(bin_name ${PROJECT_NAME})
 add_executable(${bin_name}
     main.cpp
     power_management.cpp
@@ -24,14 +23,14 @@ add_executable(${bin_name}
 #pico_enable_stdio_uart(${bin_name} 1)
 
 target_link_libraries(${bin_name} 
-    pico_stdlib
-    pico_stdio_uart
-    my_pico_stdio_usb
-    hardware_uart
-    hardware_sleep
     hardware_adc
+    hardware_sleep
+    hardware_uart
     hardware_watchdog
+    pico_runtime_init
+    pico_stdlib
     pico-ssd1306
+    pico_stdio_usb_revised
 )
 
 target_include_directories(${bin_name} INTERFACE lib/)

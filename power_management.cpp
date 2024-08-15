@@ -8,20 +8,22 @@
 #include "power_management.h"
 
 #include <cstdio>
+
+#include "hardware/adc.h"
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+#include "hardware/pll.h"
+#include "hardware/rosc.h"
+#include "hardware/structs/clocks.h"
+#include "hardware/structs/scb.h"
+#include "hardware/sync.h"
+#include "hardware/watchdog.h"
+#include "pico/runtime_init.h"
 #include "pico/stdlib.h"
 #include "pico/sleep.h"
 #include "pico/stdio_uart.h"
 #include "pico/stdio_usb.h" // use lib/my_pico_stdio_usb/
 #include "pico/util/queue.h"
-#include "hardware/pll.h"
-#include "hardware/clocks.h"
-#include "hardware/structs/clocks.h"
-#include "hardware/structs/scb.h"
-#include "hardware/rosc.h"
-#include "hardware/gpio.h"
-#include "hardware/adc.h"
-#include "hardware/sync.h"
-#include "hardware/watchdog.h"
 
 // === Pin Settings for power management ===
 // DC/DC mode selection Pin
@@ -335,7 +337,7 @@ static void _recover_clock_after_sleep()
     scb_hw->scr = _scr;
     clocks_hw->sleep_en0 = _sleep_en0;
     clocks_hw->sleep_en1 = _sleep_en1;
-    clocks_init(); // reset clocks
+    runtime_init_clocks(); // reset clocks
 }
 // === 'recover_from_sleep' part (end) ===================================
 

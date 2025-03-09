@@ -11,7 +11,6 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_subdirectory(lib/pico-ssd1306)
-add_subdirectory(lib/pico_stdio_usb_revised)
 
 set(bin_name ${PROJECT_NAME})
 add_executable(${bin_name}
@@ -30,7 +29,7 @@ target_link_libraries(${bin_name}
     pico_runtime_init
     pico_stdlib
     pico-ssd1306
-    pico_stdio_usb_revised
+    pico_stdio_usb
 )
 
 target_include_directories(${bin_name} INTERFACE lib/)

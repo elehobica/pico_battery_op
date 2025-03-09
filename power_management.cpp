@@ -249,6 +249,7 @@ void pm_init()
     gpio_set_dir(PIN_USER_SW, GPIO_IN);
 
     // USB Power detect Pin = Charge detect (Input)
+    gpio_init(PIN_USB_POWER_DETECT);
     gpio_set_dir(PIN_USB_POWER_DETECT, GPIO_IN);
 
     // Battery Level Input (ADC)

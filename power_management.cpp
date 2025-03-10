@@ -362,6 +362,9 @@ void pm_enter_dormant_and_wake()
     // === [3] treatments after wake up ===
     _start_serial();
     gpio_put(PIN_DCDC_PSM_CTRL, psm); // recover PWM mode
+    gpio_init(PIN_POWER_SW);  // restore GPIO setting for dormant pin
+    gpio_disable_pulls(PIN_POWER_SW);
+    gpio_set_dir(PIN_POWER_SW, GPIO_IN);
 }
 
 void pm_reboot()

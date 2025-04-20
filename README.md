@@ -1,7 +1,7 @@
 # Battery Operation for Raspberry Pi Pico / Pico 2
 ![Scene1](doc/pico_battery_operation_breadboard.jpg)
 
-[![workflow](https://github.com/elehobica/pico_battery_op/actions/workflows/build_binaries.yml/badge.svg)](https://github.com/elehobica/pico_battery_op/actions/workflows/build_binaries.yml)
+[![Build](https://github.com/elehobica/pico_battery_op/actions/workflows/build-binaries.yml/badge.svg)](https://github.com/elehobica/pico_battery_op/actions/workflows/build-binaries.yml)
 
 ## Overview
 This is a sample project for battery operation of Raspberry Pi Pico / Pico 2.<br>

@@ -109,3 +109,6 @@ $ cmake -DPICO_PLATFORM=rp2350 -DPICO_BOARD=pico2 ..  # (for Raspberry Pi Pico 2
 $ make -j4
 ```
 * Download "*.uf2" on RPI-RP2 or RP2350 drive
+
+## For more detail about internal code structure
+* See [DeepWiki](https://deepwiki.com/elehobica/pico_battery_op) (powered by [Devin](https://app.devin.ai/invite/WFPByHrQP7TwsUuq))

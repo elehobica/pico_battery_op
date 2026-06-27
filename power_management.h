@@ -4,8 +4,7 @@
 / refer to https://opensource.org/licenses/BSD-2-Clause
 /------------------------------------------------------*/
 
-#ifndef _POWER_MANAGEMENT_H_
-#define _POWER_MANAGEMENT_H_
+#pragma once
 
 #include <cstdint>
 
@@ -55,5 +54,3 @@ void pm_clear_btn_evt();
 #ifdef __cplusplus
 }
 #endif
-
-#endif // _POWER_MANAGEMENT_H_

@@ -33,7 +33,7 @@ static const uint32_t PIN_USB_POWER_DETECT = 24;
 // Power Keep Pin
 static const uint32_t PIN_POWER_KEEP = 19;
 // Power Switch
-static const uint32_t PIN_POWER_SW = 21;
+static const uint32_t PIN_POWER_SW = 28;
 // User Switch
 static const uint32_t PIN_USER_SW = 17;
 // Peripheral Power Enable (Active Low)

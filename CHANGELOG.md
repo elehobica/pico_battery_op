@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased]
 ### Added
 * Add workflow to build binaries
+* Add docker_build.sh
+### Changed
+* Move PIN_POWER_SW from GP21 to GP28
+* Set internal pullup on PIN_POWER_SW
+* Move PIN_POWER_KEEP from GP19 to GP27
 
 ## [1.0.1] - 2025-03-10
 ### Added

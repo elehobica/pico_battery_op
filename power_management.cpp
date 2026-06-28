@@ -240,7 +240,7 @@ void pm_init()
 
     // Power Switch (Input)
     gpio_init(PIN_POWER_SW);
-    gpio_disable_pulls(PIN_POWER_SW);
+    gpio_pull_up(PIN_POWER_SW);
     gpio_set_dir(PIN_POWER_SW, GPIO_IN);
 
     // User Switch (Input)
@@ -363,7 +363,7 @@ void pm_enter_dormant_and_wake()
     _start_serial();
     gpio_put(PIN_DCDC_PSM_CTRL, psm); // recover PWM mode
     gpio_init(PIN_POWER_SW);  // restore GPIO setting for dormant pin
-    gpio_disable_pulls(PIN_POWER_SW);
+    gpio_pull_up(PIN_POWER_SW);
     gpio_set_dir(PIN_POWER_SW, GPIO_IN);
 }
 

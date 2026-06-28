@@ -31,7 +31,7 @@ static const uint32_t PIN_DCDC_PSM_CTRL = 23;
 // USB Charge detect Pin
 static const uint32_t PIN_USB_POWER_DETECT = 24;
 // Power Keep Pin
-static const uint32_t PIN_POWER_KEEP = 19;
+static const uint32_t PIN_POWER_KEEP = 27;
 // Power Switch
 static const uint32_t PIN_POWER_SW = 28;
 // User Switch

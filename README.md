@@ -35,7 +35,7 @@ This project features:
 * In this project sample, LED is blinking in this state
 * Toggle peripheral power by user switch single push (in this project OLED display runs under peripheral power)
 * Detectable for power provided from battery or USB power
-* Transition to DeepSleep state by user switch long push
+* Transition to DeepSleep state by power switch single push
 * Transition to Shutdown state by power switch long push or low battery detected
 
 ### DeepSleep state

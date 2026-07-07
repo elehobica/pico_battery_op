@@ -206,6 +206,20 @@ static void _update_button_action()
     button_prv[0] = button;
 }
 
+// Reset button recognition so that a currently-held press is ignored until released.
+// Used at power-on and after dormant wake (both are triggered by a Power switch push,
+// whose release must not be recognized as a button gesture).
+static void _reset_button_state()
+{
+    for (int i = 0; i < NUM_BTN_HISTORY; i++) {
+        button_prv[i] = ButtonOpen;
+    }
+    button_repeat_count = LONG_LONG_PUSH_COUNT + 1; // ignore the ongoing press until release
+    // drain any pending button event
+    element_t element;
+    while (queue_try_remove(&btn_evt_queue, &element)) {}
+}
+
 static bool _timer_callback_adc(repeating_timer_t *rt) {
     static int count = 0;
     _update_button_action();
@@ -365,6 +379,10 @@ void pm_enter_dormant_and_wake()
     gpio_init(PIN_POWER_SW);  // restore GPIO setting for dormant pin
     gpio_pull_up(PIN_POWER_SW);
     gpio_set_dir(PIN_POWER_SW, GPIO_IN);
+
+    // Ignore the wake-up Power switch push (and its release) so it is not recognized
+    // as a button gesture (e.g. ButtonPowerSingle would re-enter dormant immediately).
+    _reset_button_state();
 }
 
 void pm_reboot()

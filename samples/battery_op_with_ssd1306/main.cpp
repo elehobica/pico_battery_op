@@ -95,7 +95,7 @@ int main()
                         case ButtonPowerLongLong:
                             power_state = ShutdownState;
                             break;
-                        case ButtonUserLongLong:
+                        case ButtonPowerSingle:
                             power_state = DeepSleepState;
                             break;
                         case ButtonUserSingle:

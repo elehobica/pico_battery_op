@@ -58,10 +58,6 @@ This project features:
 
 [RPi_Pico_battery_operation.pdf](doc/RPi_Pico_battery_operation.pdf)
 
-* Alternative schematic for the case non-SMD devices are desirable for bread board test
-
-[RPi_Pico_battery_operation_breadboard.pdf](doc/RPi_Pico_battery_operation_breadboard.pdf)
-
 ### Comments for schematic
 * T1 switches battery power to be used only when USB is unplugged. Please refer to "Using a Battery Charger" section of [pico-datasheet.pdf](https://datasheets.raspberrypi.org/pico/pico-datasheet.pdf)
 * T2 controls EN signal of DC/DC converter on Raspberry Pi Pico Board. To enable DC/DC converter, EN signal needs to be High by switching T2 off.

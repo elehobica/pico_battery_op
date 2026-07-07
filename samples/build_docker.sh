@@ -8,15 +8,28 @@
 # Local Docker build script that mirrors .github/workflows/build-binaries.yml.
 # Uses the same SDK image as CI (elehobica/pico-sdk-dev-docker:sdk-2.1.1-1.0.0)
 # and runs cmake/make inside the container.
+#
+# The sample to build is taken from the current working directory, so run it
+# from inside the sample folder you want to build, e.g.:
+#   cd samples/battery_op_with_ssd1306
+#   ../build_docker.sh          # both targets -> build/ , build2/
 
 set -e
 
 IMAGE="elehobica/pico-sdk-dev-docker:sdk-2.1.1-1.0.0"
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+SAMPLES_DIR="$(cd "$(dirname "$0")" && pwd)"     # .../samples
+PROJECT_ROOT="$(cd "$SAMPLES_DIR/.." && pwd)"    # repository root
+
+# Sample is determined by the caller's current working directory.
+SAMPLE_DIR="$PWD"
+SAMPLE_NAME="$(basename "$SAMPLE_DIR")"
 
 usage() {
   cat <<EOF
-Usage: $0 [target] [options]
+Usage: (cd samples/<sample> && ../$(basename "$0") [target] [options])
+
+The sample to build is taken from the current working directory. Run this
+script from inside the sample folder you want to build.
 
 Targets:
   pico    Build for Pico / Pico W       (rp2040, output: build/)
@@ -42,6 +55,18 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Must be run from a sample directory directly under samples/ that has a CMakeLists.txt.
+if [[ "$(dirname "$SAMPLE_DIR")" != "$SAMPLES_DIR" || ! -f "$SAMPLE_DIR/CMakeLists.txt" ]]; then
+  echo "error: run this from inside a sample folder under samples/ (current: $SAMPLE_DIR)" >&2
+  usage
+  exit 1
+fi
+
+# Path of the sample relative to the repository root (mounted at /workspace).
+SAMPLE_REL="samples/$SAMPLE_NAME"
+
+echo "Sample: $SAMPLE_REL"
+
 # Run cmake/make inside the SDK container.
 # Args: $1=build_dir  $2=extra cmake options (may be empty)
 run_build() {
@@ -49,9 +74,9 @@ run_build() {
   local cmake_extra="$2"
 
   if [[ "$KEEP" -eq 0 ]]; then
-    rm -rf "$PROJECT_ROOT/$build_dir"
+    rm -rf "$SAMPLE_DIR/$build_dir"
   fi
-  mkdir -p "$PROJECT_ROOT/$build_dir"
+  mkdir -p "$SAMPLE_DIR/$build_dir"
 
   docker run --rm \
     --user "$(id -u):$(id -g)" \
@@ -60,9 +85,9 @@ run_build() {
     -e PICO_EXTRAS_PATH=/home/rp2dev/pico/pico-extras \
     -e PICO_EXAMPLES_PATH=/home/rp2dev/pico/pico-examples \
     -v "$PROJECT_ROOT":/workspace \
-    -w "/workspace/$build_dir" \
+    -w "/workspace/$SAMPLE_REL/$build_dir" \
     "$IMAGE" \
-    bash -c "cmake $cmake_extra /workspace && make -j\$(nproc)"
+    bash -c "cmake $cmake_extra /workspace/$SAMPLE_REL && make -j\$(nproc)"
 }
 
 BUILT_DIRS=()
@@ -85,5 +110,7 @@ esac
 echo ""
 echo "===== Output ====="
 for d in "${BUILT_DIRS[@]}"; do
-  [[ -f "$PROJECT_ROOT/$d/pico_battery_op.uf2" ]] && echo "  $d/pico_battery_op.uf2"
+  for uf2 in "$SAMPLE_DIR/$d"/*.uf2; do
+    [[ -f "$uf2" ]] && echo "  $SAMPLE_REL/$d/$(basename "$uf2")"
+  done
 done

@@ -70,7 +70,20 @@ This project features:
   That is why voltage divider (R4 and R5) is needed at Gate of T4 to keep T4 off while USB unplugged.
 * T1 and T5 (P-ch MOSFET) are used as Hi-side switches. To drive Raspberry Pi Pico and peripheral devices in stable, those P-ch MOSFETs should be choosed as low On-Resistance (~0.1ohm) and low threshold voltage (~2.5V).
 
-## How to build
+## How to build with docker image
+* Builds the firmware inside [pico-sdk-dev-docker:sdk-2.1.1-1.0.0](https://hub.docker.com/r/elehobica/pico-sdk-dev-docker) (same image used by CI). Requires Docker; no local Pico SDK setup is needed.
+* `samples/build_docker.sh` drives the container build. The sample to build is taken from the current directory, so run it from inside the sample folder you want to build (`samples/xxxx`).
+```
+$ git clone -b main https://github.com/elehobica/pico_battery_op.git
+$ cd pico_battery_op/samples/xxxx
+$ ../build_docker.sh           # build both targets (default)
+$ ../build_docker.sh pico      # build only Pico / Pico W      -> build/xxxx.uf2
+$ ../build_docker.sh pico2     # build only Pico 2 / Pico 2 W  -> build2/xxxx.uf2
+```
+* Outputs: `build/xxxx.uf2` (Pico / Pico W), `build2/xxxx.uf2` (Pico 2 / Pico 2 W)
+* Download "*.uf2" on RPI-RP2 or RP2350 drive
+
+## How to build in local
 * See ["Getting started with Raspberry Pi Pico"](https://datasheets.raspberrypi.org/pico/getting-started-with-pico.pdf)
 * Put "pico-sdk", "pico-examples" and "pico-extras" on the same level with this project folder.
 * Set environmental variables for PICO_SDK_PATH, PICO_EXTRAS_PATH and PICO_EXAMPLES_PATH
@@ -91,7 +104,7 @@ This project features:
 * Confirmed with cmake-3.27.2-windows-x86_64 and gcc-arm-none-eabi-10.3-2021.10-win32
 * Lanuch "Developer Command Prompt for VS 2022"
 ```
-> cd pico_battery_op
+> cd pico_battery_op\samples\xxxx
 > mkdir build && cd build
 > cmake -G "NMake Makefiles" ..  ; (for Raspberry Pi Pico 1 series)
 > cmake -G "NMake Makefiles" -DPICO_PLATFORM=rp2350 -DPICO_BOARD=pico2 ..  ; (for Raspberry Pi Pico 2)
@@ -102,7 +115,7 @@ This project features:
 * Build is confirmed with [pico-sdk-dev-docker:sdk-2.1.1-1.0.0]( https://hub.docker.com/r/elehobica/pico-sdk-dev-docker)
 * Confirmed with cmake-3.22.1 and arm-none-eabi-gcc (15:10.3-2021.07-4) 10.3.1
 ```
-$ cd pico_battery_op
+$ cd pico_battery_op/samples/xxxx
 $ mkdir build && cd build
 $ cmake ..  # (for Raspberry Pi Pico 1 series)
 $ cmake -DPICO_PLATFORM=rp2350 -DPICO_BOARD=pico2 ..  # (for Raspberry Pi Pico 2)

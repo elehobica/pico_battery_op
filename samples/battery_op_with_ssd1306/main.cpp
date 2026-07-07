@@ -10,7 +10,7 @@
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
-#include "lib/pico-ssd1306/ssd1306.h"
+#include "ssd1306.h"
 #include "power_management.h"
 
 typedef enum {

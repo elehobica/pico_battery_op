@@ -102,37 +102,37 @@ int main()
         if (peri_power) {
             char str[64];
             ssd1306_clear(&disp);
-            ssd1306_draw_string(&disp, 8*0, 8*0, 1, (char *) "Battery Op. Demo");
+            ssd1306_draw_string(&disp, 8*0, 8*0, 1, (char*) "Battery Op. Demo");
             if (power_state == PmStateCharge) {
                 if (pm_usb_power_detected()) {
                     if ((state_count % 10) < 5) {
-                        ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char *) "Charging");
+                        ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char*) "Charging");
                     }
                 }
             } else {
                 if (pm_usb_power_detected()) {
-                    ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char *) "USB Power");
+                    ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "USB Power");
                     sprintf(str, "VSYS: %4.2f V", (float) battery_voltage / 1000.0);
                 } else {
-                    ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char *) "Battery Power");
+                    ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "Battery Power");
                     sprintf(str, "Battery: %4.2f V", (float) battery_voltage / 1000.0);
                 }
                 ssd1306_draw_string(&disp, 8*0, 8*3, 1, str);
                 if (peri_power) {
-                    ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char *) "Peri. Power: ON");
+                    ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char*) "Peri. Power: ON");
                 } else {
-                    ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char *) "Peri. Power: OFF");
+                    ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char*) "Peri. Power: OFF");
                 }
                 if (power_state == PmStateDeepSleep) {
                     if ((state_count % 10) < 5) {
-                        ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char *) "GO DORMANT");
+                        ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) "GO DORMANT");
                     }
                 } else if (power_state == PmStateShutdown) {
                     if ((state_count % 10) < 5) {
                         if (pm_get_low_battery()) {
-                            ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char *) "LOW BATTERY");
+                            ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) "LOW BATTERY");
                         } else {
-                            ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char *) "SHUTDOWN");
+                            ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) "SHUTDOWN");
                         }
                     }
                 }

@@ -72,13 +72,13 @@ bool pm_usb_power_detected();
 void pm_enter_dormant_and_wake();
 void pm_reboot();
 bool pm_is_caused_reboot();
-bool pm_get_btn_evt(button_action_t *btn_act);
+bool pm_get_btn_evt(button_action_t* btn_act);
 void pm_clear_btn_evt();
 
 // === Power state machine ===
 // Register callbacks and select the initial state from USB-plugged detection.
 // Call once after pm_init().
-void pm_start(const pm_callbacks_t *callbacks);
+void pm_start(const pm_callbacks_t* callbacks);
 // Advance the power state machine by one tick. Call it periodically from the
 // main loop (assumes an ~100 ms cadence for its dwell timing). This may block
 // while dormant in DeepSleep / Charge states.

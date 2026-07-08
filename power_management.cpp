@@ -227,7 +227,7 @@ static void _reset_button_state()
     while (queue_try_remove(&btn_evt_queue, &element)) {}
 }
 
-static bool _timer_callback_adc(repeating_timer_t *rt) {
+static bool _timer_callback_adc(repeating_timer_t* rt) {
     static int count = 0;
     _update_button_action();
     if (count % (TIMER_ADC_HZ * BATT_CHECK_INTERVAL_SEC) == TIMER_ADC_HZ * BATT_CHECK_INTERVAL_SEC - 1) {
@@ -402,7 +402,7 @@ bool pm_is_caused_reboot()
     return watchdog_caused_reboot();
 }
 
-bool pm_get_btn_evt(button_action_t *btn_act)
+bool pm_get_btn_evt(button_action_t* btn_act)
 {
     int count = queue_get_level(&btn_evt_queue);
     if (count) {
@@ -443,7 +443,7 @@ static void _enter_dormant_sequence()
     _state = PmStateNormal;
 }
 
-void pm_start(const pm_callbacks_t *callbacks)
+void pm_start(const pm_callbacks_t* callbacks)
 {
     if (callbacks != nullptr) {
         _cb = *callbacks;

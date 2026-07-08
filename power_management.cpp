@@ -43,14 +43,18 @@ static const uint32_t PIN_PERI_POWER_ENB = 20;
 static const uint32_t PIN_BATT_LVL = 29;
 static const uint32_t ADC_PIN_BATT_LVL = 3;
 
+// ADC characteristics
+static const uint32_t ADC_RESOLUTION = 12;   // 12-bit ADC (raw range 0 .. 2^12-1)
+static const float ADC_REF_VOLTAGE = 3.3;    // [V] ADC reference voltage
+
 // ADC Timer & frequency for Battery monitor
 static repeating_timer_t timer;
 const int TIMER_ADC_HZ = 20;
 const int BATT_CHECK_INTERVAL_SEC = 5;
 
 // Battery voltage
-const uint16_t LOW_BATTERY_THRESHOLD = 2900;
-static uint16_t _bat_mv = 4200;
+const float LOW_BATTERY_THRESHOLD = 2.9; // [V]
+static float _bat_volt = 4.2; // [V]
 
 // for preserving clock configuration
 static uint32_t _scr;
@@ -87,12 +91,14 @@ static void _monitor_battery_voltage()
 {
     // ADC Calibration Coefficients
     // ADC3 pin is connected to middle point of voltage divider 200Kohm + 100Kohm
-    const int16_t coef_a = 9875;
-    const int16_t coef_b = -20;
+    // coef_a: ADC pin voltage -> battery voltage gain (nominal divider ratio 3.0)
+    // coef_b: offset [V]
+    const float coef_a = 2.9917;
+    const float coef_b = -0.020;
     adc_select_input(ADC_PIN_BATT_LVL);
-    uint16_t result = adc_read();
-    _bat_mv = result * coef_a / (1<<12) + coef_b;
-    //printf("Battery Voltage = %d (mV)\n", bat_mv);
+    float adc_voltage = (float) adc_read() * ADC_REF_VOLTAGE / ((1 << ADC_RESOLUTION) - 1); // [V]
+    _bat_volt = adc_voltage * coef_a + coef_b; // [V]
+    //printf("Battery Voltage = %f (V)\n", _bat_volt);
 }
 
 static button_status_t _get_sw_status()
@@ -305,15 +311,15 @@ void pm_set_power_keep(bool value)
     gpio_put(PIN_POWER_KEEP, value);
 }
 
-uint16_t pm_get_battery_voltage()
+float pm_get_battery_voltage()
 {
-    return _bat_mv;
+    return _bat_volt;
 }
 
 bool pm_get_low_battery()
 {
     static bool low_battery = false; // never turn to false once true
-    if (!low_battery && _bat_mv < LOW_BATTERY_THRESHOLD) {
+    if (!low_battery && _bat_volt < LOW_BATTERY_THRESHOLD) {
         low_battery = true;
     }
     return low_battery;

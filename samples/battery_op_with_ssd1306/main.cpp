@@ -84,7 +84,7 @@ int main()
 
     while (true) {
         // Monitor
-        uint16_t battery_voltage = pm_get_battery_voltage();
+        float battery_voltage = pm_get_battery_voltage();
 
         // Power state machine (library side; may block while dormant)
         pm_process();
@@ -112,10 +112,10 @@ int main()
             } else {
                 if (pm_usb_power_detected()) {
                     ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "USB Power");
-                    sprintf(str, "VSYS: %4.2f V", (float) battery_voltage / 1000.0);
+                    sprintf(str, "VSYS: %4.2f V", battery_voltage);
                 } else {
                     ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "Battery Power");
-                    sprintf(str, "Battery: %4.2f V", (float) battery_voltage / 1000.0);
+                    sprintf(str, "Battery: %4.2f V", battery_voltage);
                 }
                 ssd1306_draw_string(&disp, 8*0, 8*3, 1, str);
                 if (peri_power) {

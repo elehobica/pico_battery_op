@@ -70,6 +70,13 @@ static uint32_t button_repeat_count = LONG_LONG_PUSH_COUNT + 1; // to ignore fir
 static queue_t btn_evt_queue;
 static const int QueueLength = 1;
 
+// Power state machine
+static const uint32_t DORMANT_DWELL_COUNT = 30; // ticks to stay before dormant/charge (~3s @ 100ms loop)
+static pm_state_t _state = PmStateNormal;
+static pm_state_t _state_prev = PmStateNormal;
+static uint32_t _state_count = 0;
+static pm_callbacks_t _cb = {};
+
 static void _start_serial()
 {
     stdio_uart_init();
@@ -419,4 +426,104 @@ void pm_clear_btn_evt()
         count--;
     }
     */
+}
+
+// === Power state machine =================================================
+static void _enter_dormant_sequence()
+{
+    // Let the application quiesce its peripherals (e.g. display) before power off.
+    if (_cb.on_before_dormant != nullptr) {
+        _cb.on_before_dormant();
+    }
+    if (pm_get_peripheral_power()) {
+        pm_set_peripheral_power(false);
+    }
+    pm_enter_dormant_and_wake();
+    pm_set_peripheral_power(true);
+    _state = PmStateNormal;
+}
+
+void pm_start(const pm_callbacks_t *callbacks)
+{
+    if (callbacks != nullptr) {
+        _cb = *callbacks;
+    }
+    // Select the initial state depending on whether USB is plugged.
+    _state = pm_usb_power_detected() ? PmStateCharge : PmStateNormal;
+    _state_prev = _state;
+    _state_count = 0;
+}
+
+void pm_process()
+{
+    switch (_state) {
+        case PmStateNormal:
+            pm_set_power_keep(true);
+            if (pm_get_low_battery()) {
+                _state = PmStateShutdown;
+            }
+            if (_state_count == 0) {
+                pm_set_peripheral_power(true);
+            }
+            // User Control Action
+            button_action_t btn_act;
+            if (pm_get_btn_evt(&btn_act)) {
+                switch (btn_act) {
+                    case ButtonPowerLongLong:
+                        _state = PmStateShutdown;
+                        break;
+                    case ButtonPowerSingle:
+                        _state = PmStateDeepSleep;
+                        break;
+                    default:
+                        // forward events not consumed by the power state machine
+                        if (_cb.on_button_event != nullptr) {
+                            _cb.on_button_event(btn_act);
+                        }
+                        break;
+                }
+            }
+            pm_clear_btn_evt();
+            break;
+        case PmStateDeepSleep:
+            if (_state_count >= DORMANT_DWELL_COUNT) {
+                _enter_dormant_sequence();
+            }
+            break;
+        case PmStateShutdown:
+            if (_state_count >= DORMANT_DWELL_COUNT) {
+                _state = PmStateCharge;
+            }
+            break;
+        case PmStateCharge: // same as dormant to minimize active power besides pm_set_power_keep(false)
+            pm_set_power_keep(false);
+            if (_state_count >= DORMANT_DWELL_COUNT) {
+                _enter_dormant_sequence();
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (_state_prev == _state) {
+        _state_count++;
+    } else {
+        _state_count = 0;
+    }
+    if (_state_prev != _state) {
+        if (_cb.on_state_changed != nullptr) {
+            _cb.on_state_changed(_state, _state_prev);
+        }
+    }
+    _state_prev = _state;
+}
+
+pm_state_t pm_get_state()
+{
+    return _state;
+}
+
+uint32_t pm_get_state_count()
+{
+    return _state_count;
 }

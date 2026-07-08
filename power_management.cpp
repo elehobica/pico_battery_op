@@ -36,8 +36,6 @@ static const uint32_t PIN_POWER_KEEP = 27;
 static const uint32_t PIN_POWER_SW = 28;
 // User Switch
 static const uint32_t PIN_USER_SW = 17;
-// Peripheral Power Enable (Active Low)
-static const uint32_t PIN_PERI_POWER_ENB = 20;
 
 // Battery Voltage Pin (GPIO29: ADC3) (Raspberry Pi Pico built-in circuit)
 static const uint32_t PIN_BATT_LVL = 29;
@@ -255,12 +253,6 @@ static int timer_init_battery_check()
 
 void pm_init()
 {
-    // Periphearal Power Enable (Active Low) (Open Drain) (external pull up)
-    gpio_init(PIN_PERI_POWER_ENB);
-    gpio_disable_pulls(PIN_PERI_POWER_ENB);
-    //pm_set_peripheral_power(false);
-    pm_set_peripheral_power(true);
-
     // Power Keep Pin (Output)
     gpio_init(PIN_POWER_KEEP);
     gpio_set_dir(PIN_POWER_KEEP, GPIO_OUT);
@@ -323,24 +315,6 @@ bool pm_get_low_battery()
         low_battery = true;
     }
     return low_battery;
-}
-
-void pm_set_peripheral_power(bool value)
-{
-    // Open Drain, Active Low
-    if (value) {
-        gpio_put(PIN_PERI_POWER_ENB, 0);
-        gpio_set_dir(PIN_PERI_POWER_ENB, GPIO_OUT); 
-    } else {
-        gpio_put(PIN_PERI_POWER_ENB, 0);
-        gpio_set_dir(PIN_PERI_POWER_ENB, GPIO_IN); 
-    }
-}
-
-bool pm_get_peripheral_power()
-{
-    // True if GPIO_OUT
-    return gpio_get_dir(PIN_PERI_POWER_ENB);
 }
 
 bool pm_get_power_sw()
@@ -437,15 +411,13 @@ void pm_clear_btn_evt()
 // === Power state machine =================================================
 static void _enter_dormant_sequence()
 {
-    // Let the application quiesce its peripherals (e.g. display) before power off.
+    // Let the application quiesce its peripherals (e.g. display, peripheral
+    // power) before entering dormant. It is re-enabled on the way back via the
+    // on_state_changed(PmStateNormal) callback below.
     if (_cb.on_before_dormant != nullptr) {
         _cb.on_before_dormant();
     }
-    if (pm_get_peripheral_power()) {
-        pm_set_peripheral_power(false);
-    }
     pm_enter_dormant_and_wake();
-    pm_set_peripheral_power(true);
     _state = PmStateNormal;
 }
 
@@ -467,9 +439,6 @@ void pm_process()
             pm_set_power_keep(true);
             if (pm_get_low_battery()) {
                 _state = PmStateShutdown;
-            }
-            if (_state_count == 0) {
-                pm_set_peripheral_power(true);
             }
             // User Control Action
             button_action_t btn_act;

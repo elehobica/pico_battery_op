@@ -13,12 +13,39 @@
 #include "ssd1306.h"
 #include "power_management.h"
 
+// Peripheral Power Enable (Active Low, Open Drain, external pull up)
+static const uint32_t PIN_PERI_POWER_ENB = 20;
+
 static ssd1306_t disp;
 static bool peri_power_prev = false;
 
 static inline uint32_t _millis(void)
 {
 	return to_ms_since_boot(get_absolute_time());
+}
+
+void peripheral_power_init()
+{
+    gpio_init(PIN_PERI_POWER_ENB);
+    gpio_disable_pulls(PIN_PERI_POWER_ENB);
+}
+
+void set_peripheral_power(bool value)
+{
+    // Open Drain, Active Low
+    if (value) {
+        gpio_put(PIN_PERI_POWER_ENB, 0);
+        gpio_set_dir(PIN_PERI_POWER_ENB, GPIO_OUT);
+    } else {
+        gpio_put(PIN_PERI_POWER_ENB, 0);
+        gpio_set_dir(PIN_PERI_POWER_ENB, GPIO_IN);
+    }
+}
+
+bool get_peripheral_power()
+{
+    // True if GPIO_OUT
+    return gpio_get_dir(PIN_PERI_POWER_ENB);
 }
 
 void display_init()
@@ -45,19 +72,28 @@ void display_deinit()
 }
 
 // === Power management callbacks (application side) =======================
+// Peripheral power is turned on whenever the device (re)enters Normal state.
+static void on_state_changed(pm_state_t new_state, pm_state_t prev_state)
+{
+    if (new_state == PmStateNormal) {
+        set_peripheral_power(true);
+    }
+}
+
 // User switch single push toggles peripheral power (OLED runs under it).
 static void on_button_event(button_action_t btn_act)
 {
     if (btn_act == ButtonUserSingle) {
-        pm_set_peripheral_power(!pm_get_peripheral_power());
+        set_peripheral_power(!get_peripheral_power());
     }
 }
 
-// Quiesce the display before the library powers off peripherals and dormants.
+// Quiesce the display and peripheral power before the library enters dormant.
 static void on_before_dormant()
 {
-    if (pm_get_peripheral_power()) {
+    if (get_peripheral_power()) {
         display_deinit();
+        set_peripheral_power(false);
     }
     peri_power_prev = false; // force display re-init after wake via the edge below
 }
@@ -68,17 +104,19 @@ int main()
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
+    peripheral_power_init();
+
     pm_init(); // Serial terminal also starts from here
     printf("Battery Op. Demo\n");
 
     sleep_ms(100);
     pm_callbacks_t callbacks = {
-        .on_state_changed = nullptr,
+        .on_state_changed = on_state_changed,
         .on_button_event = on_button_event,
         .on_before_dormant = on_before_dormant,
     };
     pm_start(&callbacks); // selects initial state from USB-plugged detection
-    pm_set_peripheral_power(true);
+    set_peripheral_power(true);
 
     sleep_ms(250);
 
@@ -92,7 +130,7 @@ int main()
         uint32_t state_count = pm_get_state_count();
 
         // Display (SSD1306 powered by Peripheral Power)
-        bool peri_power = pm_get_peripheral_power();
+        bool peri_power = get_peripheral_power();
         if (!peri_power_prev && peri_power) {
             sleep_ms(100); // wait for ssd1306 power stable
             display_init();

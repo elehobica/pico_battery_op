@@ -65,8 +65,6 @@ void pm_init();
 void pm_set_power_keep(bool value);
 bool pm_get_low_battery();
 float pm_get_battery_voltage();
-void pm_set_peripheral_power(bool value);
-bool pm_get_peripheral_power();
 bool pm_get_power_sw();
 bool pm_usb_power_detected();
 void pm_enter_dormant_and_wake();

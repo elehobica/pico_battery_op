@@ -109,7 +109,6 @@ int main()
     pm_init(); // Serial terminal also starts from here
     printf("Battery Op. Demo\n");
 
-    sleep_ms(100);
     pm_callbacks_t callbacks = {
         .on_state_changed = on_state_changed,
         .on_button_event = on_button_event,
@@ -117,8 +116,6 @@ int main()
     };
     pm_start(&callbacks); // selects initial state from USB-plugged detection
     set_peripheral_power(true);
-
-    sleep_ms(250);
 
     while (true) {
         // Monitor

@@ -7,7 +7,7 @@
 
 #include "power_management.h"
 
-#include <cstdio>
+//#include <cstdio>
 
 #include "hardware/adc.h"
 #include "hardware/clocks.h"

@@ -25,6 +25,19 @@
 #include "pico/stdio_usb.h" // use lib/my_pico_stdio_usb/
 #include "pico/util/queue.h"
 
+// === Internal types (not exposed to the application) ===
+// Raw switch status used by the button-gesture classifier.
+typedef enum _button_status_t {
+    ButtonOpen = 0,
+    ButtonPower,
+    ButtonUser
+} button_status_t;
+
+// Element type of the internal button-event queue.
+typedef struct element {
+    button_action_t button_action;
+} element_t;
+
 // === Pin Settings for power management ===
 // DC/DC mode selection Pin
 static const uint32_t PIN_DCDC_PSM_CTRL = 23;
@@ -82,6 +95,10 @@ static absolute_time_t _state_entered_at;
 static bool _boot = false; // true while the initial (boot) PmStateIdle is unresolved
 static pm_notice_reason_t _notice = PmNoticeNone;
 static absolute_time_t _notice_deadline;
+
+// =========================================================================
+// Internal (static) functions
+// =========================================================================
 
 static void _start_serial()
 {
@@ -245,7 +262,7 @@ static bool _timer_callback_adc(repeating_timer_t* rt) {
     return true; // keep repeating
 }
 
-static int timer_init_battery_check()
+static int _timer_init_battery_check()
 {
     // negative timeout means exact delay (rather than delay between callbacks)
     if (!add_repeating_timer_us(-1000000 / TIMER_ADC_HZ, _timer_callback_adc, nullptr, &timer)) {
@@ -255,76 +272,30 @@ static int timer_init_battery_check()
     return 1;
 }
 
-void pm_init()
+static bool _get_btn_evt(button_action_t* btn_act)
 {
-    // Power Keep Pin (Output)
-    gpio_init(PIN_POWER_KEEP);
-    gpio_set_dir(PIN_POWER_KEEP, GPIO_OUT);
-
-    // Power Switch (Input)
-    gpio_init(PIN_POWER_SW);
-    gpio_pull_up(PIN_POWER_SW);
-    gpio_set_dir(PIN_POWER_SW, GPIO_IN);
-
-    // User Switch (Input)
-    gpio_init(PIN_USER_SW);
-    gpio_pull_up(PIN_USER_SW);
-    gpio_set_dir(PIN_USER_SW, GPIO_IN);
-
-    // USB Power detect Pin = Charge detect (Input)
-    gpio_init(PIN_USB_POWER_DETECT);
-    gpio_set_dir(PIN_USB_POWER_DETECT, GPIO_IN);
-
-    // Battery Level Input (ADC)
-    adc_init();
-    adc_gpio_init(PIN_BATT_LVL);
-
-    // DCDC PSM control
-    // 0: PFM mode (best efficiency)
-    // 1: PWM mode (improved ripple)
-    gpio_init(PIN_DCDC_PSM_CTRL);
-    gpio_set_dir(PIN_DCDC_PSM_CTRL, GPIO_OUT);
-    // PSM control mode can be overwritten after pm_init()
-    gpio_put(PIN_DCDC_PSM_CTRL, 0); // PWM mode for best efficiency
-
-    // button event queue
-    queue_init(&btn_evt_queue, sizeof(element_t), QueueLength);
-
-    // Battery Check Timer start
-    timer_init_battery_check();
-
-    // Serial start
-    _start_serial();
-}
-
-bool pm_usb_power_detected()
-{
-    return gpio_get(PIN_USB_POWER_DETECT);
-}
-
-void pm_set_power_keep(bool value)
-{
-    gpio_put(PIN_POWER_KEEP, value);
-}
-
-float pm_get_battery_voltage()
-{
-    return _bat_volt;
-}
-
-bool pm_get_low_battery()
-{
-    static bool low_battery = false; // never turn to false once true
-    if (!low_battery && _bat_volt < LOW_BATTERY_THRESHOLD) {
-        low_battery = true;
+    int count = queue_get_level(&btn_evt_queue);
+    if (count) {
+        element_t element;
+        queue_remove_blocking(&btn_evt_queue, &element);
+        *btn_act = element.button_action;
+        return true;
     }
-    return low_battery;
+    return false;
 }
 
-bool pm_get_power_sw()
+static void _clear_btn_evt()
 {
-    // True if Low
-    return !gpio_get(PIN_POWER_SW);
+    // queue doesn't work as intended when removing rest items after removed or poke once
+    // Therefore set QueueLength = 1 instead of removing here
+    /*
+    int count = queue_get_level(btn_evt_queue);
+    while (count) {
+        element_t element;
+        queue_remove_blocking(btn_evt_queue, &element);
+        count--;
+    }
+    */
 }
 
 // === 'recover_from_sleep' part (start) ===================================
@@ -347,7 +318,7 @@ static void _recover_clock_after_sleep()
 }
 // === 'recover_from_sleep' part (end) ===================================
 
-void pm_enter_dormant_and_wake()
+static void _enter_dormant_and_wake()
 {
     // === [1] Preparation for dormant ===
     bool psm = gpio_get(PIN_DCDC_PSM_CTRL);
@@ -356,12 +327,17 @@ void pm_enter_dormant_and_wake()
 
     // === [2] goto dormant then wake up ===
     uint32_t ints = save_and_disable_interrupts(); // (+a)
-    _preserve_clock_before_sleep(); // (+c)
-    //--
+    _preserve_clock_before_sleep(); // (+b)
     sleep_run_from_xosc();
-    sleep_goto_dormant_until_pin(PIN_POWER_SW, true, false); // dormant until fall edge detected
-    //--
-    _recover_clock_after_sleep(); // (-c)
+    // go to dormant until the Power switch is pushed (fall edge detected)
+    sleep_goto_dormant_until_pin(PIN_POWER_SW, true, false);
+
+    // ------------------
+    // --- Deep Sleep ---
+    // ------------------
+
+    // wake up from here (Power switch push)
+    _recover_clock_after_sleep(); // (-b)
     restore_interrupts(ints); // (-a)
 
     // === [3] treatments after wake up ===
@@ -374,42 +350,6 @@ void pm_enter_dormant_and_wake()
     // Ignore the wake-up Power switch push (and its release) so it is not recognized
     // as a button gesture (e.g. ButtonPowerSingle would re-enter dormant immediately).
     _reset_button_state();
-}
-
-void pm_reboot()
-{
-    watchdog_reboot(0, 0, PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS);
-}
-
-bool pm_is_caused_reboot()
-{
-    return watchdog_caused_reboot();
-}
-
-bool pm_get_btn_evt(button_action_t* btn_act)
-{
-    int count = queue_get_level(&btn_evt_queue);
-    if (count) {
-        element_t element;
-        queue_remove_blocking(&btn_evt_queue, &element);
-        *btn_act = element.button_action;
-        return true;
-    }
-    return false;
-}
-
-void pm_clear_btn_evt()
-{
-    // queue doesn't work as intended when removing rest items after removed or poke once
-    // Therefore set QueueLength = 1 at main.cpp instead of removing here
-    /*
-    int count = queue_get_level(btn_evt_queue);
-    while (count) {
-        element_t element;
-        queue_remove_blocking(btn_evt_queue, &element);
-        count--;
-    }
-    */
 }
 
 // === Power state machine =================================================
@@ -452,8 +392,8 @@ static void _dormant_and_resume()
     if (_cb.on_enter_dormant != nullptr) {
         _cb.on_enter_dormant();
     }
-    pm_enter_dormant_and_wake();          // blocks until the Power switch
-    _set_state(PmStateActive);            // resume running (no-op if already Active)
+    _enter_dormant_and_wake();             // blocks until the Power switch
+    _set_state(PmStateActive);             // resume running (no-op if already Active)
     if (_cb.on_exit_dormant != nullptr) {
         _cb.on_exit_dormant();
     }
@@ -476,6 +416,92 @@ static void _commit_notice()
         default:
             break;
     }
+}
+
+// =========================================================================
+// Public functions (declaration order follows power_management.h)
+// =========================================================================
+
+void pm_init()
+{
+    // Power Keep Pin (Output)
+    gpio_init(PIN_POWER_KEEP);
+    gpio_set_dir(PIN_POWER_KEEP, GPIO_OUT);
+
+    // Power Switch (Input)
+    gpio_init(PIN_POWER_SW);
+    gpio_pull_up(PIN_POWER_SW);
+    gpio_set_dir(PIN_POWER_SW, GPIO_IN);
+
+    // User Switch (Input)
+    gpio_init(PIN_USER_SW);
+    gpio_pull_up(PIN_USER_SW);
+    gpio_set_dir(PIN_USER_SW, GPIO_IN);
+
+    // USB Power detect Pin = Charge detect (Input)
+    gpio_init(PIN_USB_POWER_DETECT);
+    gpio_set_dir(PIN_USB_POWER_DETECT, GPIO_IN);
+
+    // Battery Level Input (ADC)
+    adc_init();
+    adc_gpio_init(PIN_BATT_LVL);
+
+    // DCDC PSM control
+    // 0: PFM mode (best efficiency)
+    // 1: PWM mode (improved ripple)
+    gpio_init(PIN_DCDC_PSM_CTRL);
+    gpio_set_dir(PIN_DCDC_PSM_CTRL, GPIO_OUT);
+    // PSM control mode can be overwritten after pm_init()
+    gpio_put(PIN_DCDC_PSM_CTRL, 0); // PWM mode for best efficiency
+
+    // button event queue
+    queue_init(&btn_evt_queue, sizeof(element_t), QueueLength);
+
+    // Battery Check Timer start
+    _timer_init_battery_check();
+
+    // Serial start
+    _start_serial();
+}
+
+void pm_set_power_keep(bool value)
+{
+    gpio_put(PIN_POWER_KEEP, value);
+}
+
+bool pm_get_low_battery()
+{
+    static bool low_battery = false; // never turn to false once true
+    if (!low_battery && _bat_volt < LOW_BATTERY_THRESHOLD) {
+        low_battery = true;
+    }
+    return low_battery;
+}
+
+float pm_get_battery_voltage()
+{
+    return _bat_volt;
+}
+
+bool pm_get_power_sw()
+{
+    // True if Low
+    return !gpio_get(PIN_POWER_SW);
+}
+
+bool pm_usb_power_detected()
+{
+    return gpio_get(PIN_USB_POWER_DETECT);
+}
+
+void pm_reboot()
+{
+    watchdog_reboot(0, 0, PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS);
+}
+
+bool pm_is_caused_reboot()
+{
+    return watchdog_caused_reboot();
 }
 
 void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
@@ -504,12 +530,12 @@ void pm_process()
     // application (so it can pm_cancel_notice()) and auto-commit at the deadline.
     if (_notice != PmNoticeNone) {
         button_action_t btn_act;
-        if (pm_get_btn_evt(&btn_act)) {
+        if (_get_btn_evt(&btn_act)) {
             if (_cb.on_button_event != nullptr) {
                 _cb.on_button_event(btn_act);
             }
         }
-        pm_clear_btn_evt();
+        _clear_btn_evt();
         if (_notice != PmNoticeNone && time_reached(_notice_deadline)) {
             _commit_notice();
         }
@@ -523,7 +549,7 @@ void pm_process()
                 break;
             }
             button_action_t btn_act;
-            if (pm_get_btn_evt(&btn_act)) {
+            if (_get_btn_evt(&btn_act)) {
                 switch (btn_act) {
                     case ButtonPowerSingle:
                         _begin_notice(PmNoticeSleep, _cfg.sleep_notice_ms);
@@ -539,7 +565,7 @@ void pm_process()
                         break;
                 }
             }
-            pm_clear_btn_evt();
+            _clear_btn_evt();
             break;
         }
         case PmStateIdle:

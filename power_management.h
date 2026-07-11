@@ -12,12 +12,7 @@
 extern "C" {
 #endif
 
-typedef enum _button_status_t {
-    ButtonOpen = 0,
-    ButtonPower,
-    ButtonUser
-} button_status_t;
-
+// Button gesture events reported to the application via on_button_event().
 typedef enum {
     ButtonPowerSingle = 0,
     ButtonPowerDouble,
@@ -31,11 +26,6 @@ typedef enum {
     ButtonUserLongLong,
     ButtonOthers
 } button_action_t;
-
-// using struct as an example, but primitive types can be used too
-typedef struct element {
-    button_action_t button_action;
-} element_t;
 
 // Power state managed by the power management state machine (pm_process()).
 //   PmStateIdle   : power-keep latch released. Boot boundary and shutdown target.

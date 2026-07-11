@@ -86,15 +86,15 @@ static queue_t btn_evt_queue;
 static const int QueueLength = 1;
 
 // Power state machine
-static const uint32_t DEFAULT_ANNOUNCE_MS = 3000;
-static pm_config_t _cfg = { DEFAULT_ANNOUNCE_MS, DEFAULT_ANNOUNCE_MS, DEFAULT_ANNOUNCE_MS };
+static const uint32_t DEFAULT_DEFER_MS = 3000;
+static pm_config_t _cfg = { DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS };
 static pm_callbacks_t _cb = {};
 static pm_state_t _state = PmStateIdle;
 static pm_state_t _state_prev = PmStateIdle;
 static absolute_time_t _state_entered_at;
 static bool _boot = false; // true while the initial (boot) PmStateIdle is unresolved
-static pm_notice_reason_t _notice = PmNoticeNone;
-static absolute_time_t _notice_deadline;
+static pm_deferred_reason_t _deferred = PmDeferredNone;
+static absolute_time_t _defer_deadline;
 
 // =========================================================================
 // Internal (static) functions
@@ -370,17 +370,17 @@ static void _set_state(pm_state_t new_state)
     }
 }
 
-static bool _notice_cancelable(pm_notice_reason_t reason)
+static bool _deferred_cancelable(pm_deferred_reason_t reason)
 {
-    return (reason == PmNoticeSleep) || (reason == PmNoticeShutdown);
+    return (reason == PmDeferredSleep) || (reason == PmDeferredShutdown);
 }
 
-static void _begin_notice(pm_notice_reason_t reason, uint32_t notice_ms)
+static void _begin_defer(pm_deferred_reason_t reason, uint32_t defer_ms)
 {
-    _notice = reason;
-    _notice_deadline = make_timeout_time_ms(notice_ms);
-    if (_cb.on_notice != nullptr) {
-        _cb.on_notice(reason);
+    _deferred = reason;
+    _defer_deadline = make_timeout_time_ms(defer_ms);
+    if (_cb.on_deferred != nullptr) {
+        _cb.on_deferred(reason);
     }
 }
 
@@ -399,17 +399,17 @@ static void _dormant_and_resume()
     }
 }
 
-static void _commit_notice()
+static void _run_deferred()
 {
-    pm_notice_reason_t reason = _notice;
-    _notice = PmNoticeNone;
+    pm_deferred_reason_t reason = _deferred;
+    _deferred = PmDeferredNone;
     switch (reason) {
-        case PmNoticeSleep:    // battery nap from PmStateActive (latch held)
-        case PmNoticeCharge:   // charging dormant from PmStateIdle (latch released)
+        case PmDeferredSleep:    // battery nap from PmStateActive (latch held)
+        case PmDeferredCharge:   // charging dormant from PmStateIdle (latch released)
             _dormant_and_resume();
             break;
-        case PmNoticeShutdown:
-        case PmNoticeLowBattery:
+        case PmDeferredShutdown:
+        case PmDeferredLowBattery:
             // release the latch; PmStateIdle then charges (USB) or powers off (no USB)
             _set_state(PmStateIdle);
             break;
@@ -512,7 +512,7 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
     if (config != nullptr) {
         _cfg = *config;
     }
-    _notice = PmNoticeNone;
+    _deferred = PmDeferredNone;
     // The initial PmStateIdle is the boot boundary; pm_process() resolves it on
     // the first tick (USB -> charge, no USB -> run). The _boot flag scopes the
     // "PmStateIdle + no USB -> Active" rule to boot only, so a later shutdown
@@ -526,9 +526,9 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
 
 void pm_process()
 {
-    // While a notice (grace phase) is active, forward button events to the
-    // application (so it can pm_cancel_notice()) and auto-commit at the deadline.
-    if (_notice != PmNoticeNone) {
+    // While a deferred action is pending, forward button events to the
+    // application (so it can pm_cancel_deferred()) and run it at the deadline.
+    if (_deferred != PmDeferredNone) {
         button_action_t btn_act;
         if (_get_btn_evt(&btn_act)) {
             if (_cb.on_button_event != nullptr) {
@@ -536,8 +536,8 @@ void pm_process()
             }
         }
         _clear_btn_evt();
-        if (_notice != PmNoticeNone && time_reached(_notice_deadline)) {
-            _commit_notice();
+        if (_deferred != PmDeferredNone && time_reached(_defer_deadline)) {
+            _run_deferred();
         }
         return;
     }
@@ -545,17 +545,17 @@ void pm_process()
     switch (_state) {
         case PmStateActive: {
             if (pm_get_low_battery()) {
-                _begin_notice(PmNoticeLowBattery, _cfg.shutdown_notice_ms);
+                _begin_defer(PmDeferredLowBattery, _cfg.shutdown_defer_ms);
                 break;
             }
             button_action_t btn_act;
             if (_get_btn_evt(&btn_act)) {
                 switch (btn_act) {
                     case ButtonPowerSingle:
-                        _begin_notice(PmNoticeSleep, _cfg.sleep_notice_ms);
+                        _begin_defer(PmDeferredSleep, _cfg.sleep_defer_ms);
                         break;
                     case ButtonPowerLongLong:
-                        _begin_notice(PmNoticeShutdown, _cfg.shutdown_notice_ms);
+                        _begin_defer(PmDeferredShutdown, _cfg.shutdown_defer_ms);
                         break;
                     default:
                         // forward events not consumed as a power trigger
@@ -574,7 +574,7 @@ void pm_process()
             //   no USB & boot   : start running (assert power-keep).
             //   no USB & !boot  : post-shutdown -> the hardware is powering off.
             if (pm_usb_power_detected()) {
-                _begin_notice(PmNoticeCharge, _cfg.charge_notice_ms);
+                _begin_defer(PmDeferredCharge, _cfg.charge_defer_ms);
             } else if (_boot) {
                 _set_state(PmStateActive);
             }
@@ -590,25 +590,25 @@ pm_state_t pm_get_state()
     return _state;
 }
 
-bool pm_get_notice(pm_notice_info_t* out)
+bool pm_get_deferred(pm_deferred_info_t* out)
 {
-    if (_notice == PmNoticeNone) {
+    if (_deferred == PmDeferredNone) {
         return false;
     }
     if (out != nullptr) {
-        out->reason = _notice;
-        int64_t remaining_us = absolute_time_diff_us(get_absolute_time(), _notice_deadline);
+        out->reason = _deferred;
+        int64_t remaining_us = absolute_time_diff_us(get_absolute_time(), _defer_deadline);
         out->remaining_ms = (remaining_us > 0) ? (uint32_t)(remaining_us / 1000) : 0;
-        out->cancelable = _notice_cancelable(_notice);
+        out->cancelable = _deferred_cancelable(_deferred);
     }
     return true;
 }
 
-bool pm_cancel_notice()
+bool pm_cancel_deferred()
 {
-    if (_notice != PmNoticeNone && _notice_cancelable(_notice)) {
-        _notice = PmNoticeNone;
-        // The stable state was unchanged during the notice, so nothing else to do.
+    if (_deferred != PmDeferredNone && _deferred_cancelable(_deferred)) {
+        _deferred = PmDeferredNone;
+        // The stable state was unchanged while pending, so nothing else to do.
         return true;
     }
     return false;

@@ -73,13 +73,13 @@ void display_deinit()
 
 // === Power management callbacks (application side) =======================
 // User switch single push toggles peripheral power (OLED runs under it).
-// Power switch single push during a notice cancels it (if cancelable).
+// Power switch single push cancels a pending cancelable deferred action.
 static void on_button_event(button_action_t btn_act)
 {
     if (btn_act == ButtonUserSingle) {
         set_peripheral_power(!get_peripheral_power());
     } else if (btn_act == ButtonPowerSingle) {
-        pm_cancel_notice(); // abort a cancelable notice (GO DORMANT / SHUTDOWN)
+        pm_cancel_deferred(); // abort a cancelable action (GO DORMANT / SHUTDOWN)
     }
 }
 
@@ -112,12 +112,12 @@ int main()
 
     pm_callbacks_t callbacks = {
         .on_state_changed = nullptr,
-        .on_notice = nullptr,
+        .on_deferred = nullptr,
         .on_button_event = on_button_event,
         .on_enter_dormant = on_enter_dormant,
         .on_exit_dormant = on_exit_dormant,
     };
-    pm_start(&callbacks, nullptr); // nullptr config -> default notice durations
+    pm_start(&callbacks, nullptr); // nullptr config -> default grace delays
     set_peripheral_power(true);
 
     while (true) {
@@ -127,8 +127,8 @@ int main()
         // Power state machine (library side; may block while dormant)
         pm_process();
         pm_state_t power_state = pm_get_state();
-        pm_notice_info_t notice;
-        bool has_notice = pm_get_notice(&notice);
+        pm_deferred_info_t deferred;
+        bool has_deferred = pm_get_deferred(&deferred);
         bool blink = (_millis() / 500) % 2 == 0; // 1 s period, 50% duty
 
         // Display (SSD1306 powered by Peripheral Power)
@@ -162,13 +162,13 @@ int main()
                 } else {
                     ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char*) "Peri. Power: OFF");
                 }
-                // Announce the upcoming power action (notice).
-                if (has_notice && blink) {
+                // Announce the pending deferred power action.
+                if (has_deferred && blink) {
                     const char* msg = nullptr;
-                    switch (notice.reason) {
-                        case PmNoticeSleep:      msg = "GO DORMANT";  break;
-                        case PmNoticeShutdown:   msg = "SHUTDOWN";    break;
-                        case PmNoticeLowBattery: msg = "LOW BATTERY"; break;
+                    switch (deferred.reason) {
+                        case PmDeferredSleep:      msg = "GO DORMANT";  break;
+                        case PmDeferredShutdown:   msg = "SHUTDOWN";    break;
+                        case PmDeferredLowBattery: msg = "LOW BATTERY"; break;
                         default:                 break;
                     }
                     if (msg != nullptr) {
@@ -187,7 +187,7 @@ int main()
         peri_power_prev = peri_power;
 
         // Main Process (Do something here)
-        if (power_state == PmStateActive && !has_notice) {
+        if (power_state == PmStateActive && !has_deferred) {
             gpio_xor_mask(1UL<<PICO_DEFAULT_LED_PIN);
         } else {
             gpio_put(PICO_DEFAULT_LED_PIN, 0);

@@ -38,28 +38,28 @@ typedef enum _pm_state_t {
     PmStateActive
 } pm_state_t;
 
-// A "notice" is an announce/grace phase before a terminal power action is
-// committed. The application shows it for a grace period; it auto-commits when
-// its deadline elapses. Cancelable notices can be aborted with pm_cancel_notice().
-typedef enum _pm_notice_reason_t {
-    PmNoticeNone = 0,
-    PmNoticeSleep,        // PmStateActive -> dormant nap    (cancelable)
-    PmNoticeShutdown,     // PmStateActive -> PmStateIdle     (cancelable)
-    PmNoticeLowBattery,   // PmStateActive -> PmStateIdle     (NOT cancelable)
-    PmNoticeCharge        // PmStateIdle(USB) -> dormant      (NOT cancelable)
-} pm_notice_reason_t;
+// A "deferred action" is a power action scheduled now and run automatically
+// after a grace delay, unless it is canceled (cancelable ones only) with
+// pm_cancel_deferred() before its deadline.
+typedef enum _pm_deferred_reason_t {
+    PmDeferredNone = 0,
+    PmDeferredSleep,        // PmStateActive -> dormant nap    (cancelable)
+    PmDeferredShutdown,     // PmStateActive -> PmStateIdle     (cancelable)
+    PmDeferredLowBattery,   // PmStateActive -> PmStateIdle     (NOT cancelable)
+    PmDeferredCharge        // PmStateIdle(USB) -> dormant      (NOT cancelable)
+} pm_deferred_reason_t;
 
-typedef struct _pm_notice_info_t {
-    pm_notice_reason_t reason;
-    uint32_t           remaining_ms; // until auto-commit (for countdown / blink)
+typedef struct _pm_deferred_info_t {
+    pm_deferred_reason_t reason;
+    uint32_t           remaining_ms; // until it runs (for countdown / blink)
     bool               cancelable;
-} pm_notice_info_t;
+} pm_deferred_info_t;
 
-// Notice grace durations. Pass to pm_start() (NULL = defaults, 3000 ms each).
+// Grace delays for deferred actions. Pass to pm_start() (NULL = defaults, 3000 ms each).
 typedef struct _pm_config_t {
-    uint32_t sleep_notice_ms;    // before dormant nap
-    uint32_t shutdown_notice_ms; // before releasing latch (shutdown / low battery)
-    uint32_t charge_notice_ms;   // before dormant while charging
+    uint32_t sleep_defer_ms;    // before dormant nap
+    uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
+    uint32_t charge_defer_ms;   // before dormant while charging
 } pm_config_t;
 
 // Application callbacks invoked by the power state machine.
@@ -69,11 +69,11 @@ typedef struct _pm_callbacks_t {
     // A state transition occurred (PmStateIdle <-> PmStateActive). Note: a
     // battery nap stays in PmStateActive, so it does NOT fire this callback.
     void (*on_state_changed)(pm_state_t new_state, pm_state_t prev_state);
-    // A notice (grace phase) began.
-    void (*on_notice)(pm_notice_reason_t reason);
+    // A deferred action was scheduled (its grace delay began).
+    void (*on_deferred)(pm_deferred_reason_t reason);
     // Button events not consumed by the state machine as a power trigger
-    // (e.g. ButtonUserSingle). While a notice is active, all button events are
-    // forwarded here so the application can decide to pm_cancel_notice() it.
+    // (e.g. ButtonUserSingle). While a deferred action is pending, all button
+    // events are forwarded here so the app can decide to pm_cancel_deferred() it.
     void (*on_button_event)(button_action_t btn_act);
     // Just before entering dormant (both nap and charging dormant); the app
     // quiesces its peripherals (e.g. display_deinit(), peripheral power off).
@@ -92,7 +92,7 @@ void pm_reboot();
 bool pm_is_caused_reboot();
 
 // === Power state machine ===
-// Register callbacks and notice-duration config, then select the initial state
+// Register callbacks and grace-delay config, then select the initial state
 // from USB-plugged detection. Call once after pm_init().
 void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config);
 // Advance the power state machine. Call it periodically from the main loop
@@ -101,11 +101,11 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config);
 void pm_process();
 // Current power state.
 pm_state_t pm_get_state();
-// Fill *out with the active notice info; returns false if none is active.
-bool pm_get_notice(pm_notice_info_t* out);
-// Cancel the active notice if it is cancelable. Returns true if a notice was
-// actually canceled, false otherwise (no notice, or not cancelable).
-bool pm_cancel_notice();
+// Fill *out with the pending deferred action; returns false if none is pending.
+bool pm_get_deferred(pm_deferred_info_t* out);
+// Cancel the pending deferred action if it is cancelable. Returns true if one
+// was actually canceled, false otherwise (none pending, or not cancelable).
+bool pm_cancel_deferred();
 // Milliseconds elapsed since the current state was entered (for blink timing).
 uint32_t pm_get_state_elapsed_ms();
 

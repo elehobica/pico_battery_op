@@ -72,19 +72,22 @@ void display_deinit()
 }
 
 // === Power management callbacks (application side) =======================
-// Peripheral power is turned on whenever the device (re)enters Normal state.
+// Peripheral power is turned on whenever the device (re)enters the running state.
 static void on_state_changed(pm_state_t new_state, pm_state_t prev_state)
 {
-    if (new_state == PmStateNormal) {
+    if (new_state == PmStateActive) {
         set_peripheral_power(true);
     }
 }
 
 // User switch single push toggles peripheral power (OLED runs under it).
+// Power switch single push during an announce phase cancels it (if cancelable).
 static void on_button_event(button_action_t btn_act)
 {
     if (btn_act == ButtonUserSingle) {
         set_peripheral_power(!get_peripheral_power());
+    } else if (btn_act == ButtonPowerSingle) {
+        pm_cancel(); // abort a cancelable pending (GO DORMANT / SHUTDOWN)
     }
 }
 
@@ -111,10 +114,11 @@ int main()
 
     pm_callbacks_t callbacks = {
         .on_state_changed = on_state_changed,
+        .on_pending = nullptr,
         .on_button_event = on_button_event,
         .on_before_dormant = on_before_dormant,
     };
-    pm_start(&callbacks); // selects initial state from USB-plugged detection
+    pm_start(&callbacks, nullptr); // nullptr config -> default announce durations
     set_peripheral_power(true);
 
     while (true) {
@@ -124,7 +128,9 @@ int main()
         // Power state machine (library side; may block while dormant)
         pm_process();
         pm_state_t power_state = pm_get_state();
-        uint32_t state_count = pm_get_state_count();
+        pm_pending_info_t pending;
+        bool has_pending = pm_get_pending(&pending);
+        bool blink = (_millis() / 500) % 2 == 0; // 1 s period, 50% duty
 
         // Display (SSD1306 powered by Peripheral Power)
         bool peri_power = get_peripheral_power();
@@ -138,13 +144,12 @@ int main()
             char str[64];
             ssd1306_clear(&disp);
             ssd1306_draw_string(&disp, 8*0, 8*0, 1, (char*) "Battery Op. Demo");
-            if (power_state == PmStateCharge) {
-                if (pm_usb_power_detected()) {
-                    if ((state_count % 10) < 5) {
-                        ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char*) "Charging");
-                    }
+            if (power_state == PmStateIdle) {
+                // latch released: charging while USB is present
+                if (pm_usb_power_detected() && blink) {
+                    ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char*) "Charging");
                 }
-            } else {
+            } else { // PmStateActive (running)
                 if (pm_usb_power_detected()) {
                     ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "USB Power");
                     sprintf(str, "VSYS: %4.2f V", battery_voltage);
@@ -158,17 +163,17 @@ int main()
                 } else {
                     ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char*) "Peri. Power: OFF");
                 }
-                if (power_state == PmStateDeepSleep) {
-                    if ((state_count % 10) < 5) {
-                        ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) "GO DORMANT");
+                // Announce the pending (upcoming) power action.
+                if (has_pending && blink) {
+                    const char* msg = nullptr;
+                    switch (pending.reason) {
+                        case PmPendingSleep:      msg = "GO DORMANT";  break;
+                        case PmPendingShutdown:   msg = "SHUTDOWN";    break;
+                        case PmPendingLowBattery: msg = "LOW BATTERY"; break;
+                        default:                  break;
                     }
-                } else if (power_state == PmStateShutdown) {
-                    if ((state_count % 10) < 5) {
-                        if (pm_get_low_battery()) {
-                            ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) "LOW BATTERY");
-                        } else {
-                            ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) "SHUTDOWN");
-                        }
+                    if (msg != nullptr) {
+                        ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) msg);
                     }
                 }
                 uint32_t millis = _millis();
@@ -183,7 +188,7 @@ int main()
         peri_power_prev = peri_power;
 
         // Main Process (Do something here)
-        if (power_state == PmStateNormal) {
+        if (power_state == PmStateActive && !has_pending) {
             gpio_xor_mask(1UL<<PICO_DEFAULT_LED_PIN);
         } else {
             gpio_put(PICO_DEFAULT_LED_PIN, 0);

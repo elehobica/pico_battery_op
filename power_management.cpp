@@ -73,11 +73,14 @@ static queue_t btn_evt_queue;
 static const int QueueLength = 1;
 
 // Power state machine
-static const uint32_t DORMANT_DWELL_COUNT = 30; // ticks to stay before dormant/charge (~3s @ 100ms loop)
-static pm_state_t _state = PmStateNormal;
-static pm_state_t _state_prev = PmStateNormal;
-static uint32_t _state_count = 0;
+static const uint32_t DEFAULT_ANNOUNCE_MS = 3000;
+static pm_config_t _cfg = { DEFAULT_ANNOUNCE_MS, DEFAULT_ANNOUNCE_MS, DEFAULT_ANNOUNCE_MS };
 static pm_callbacks_t _cb = {};
+static pm_state_t _state = PmStateActive;
+static pm_state_t _state_prev = PmStateActive;
+static absolute_time_t _state_entered_at;
+static pm_pending_reason_t _pending = PmPendingNone;
+static absolute_time_t _pending_deadline;
 
 static void _start_serial()
 {
@@ -409,49 +412,130 @@ void pm_clear_btn_evt()
 }
 
 // === Power state machine =================================================
-static void _enter_dormant_sequence()
+// Enter a stable state: enforce its power-keep invariant, timestamp it and
+// notify the application. No-op if already in that state.
+static void _set_state(pm_state_t new_state)
 {
-    // Let the application quiesce its peripherals (e.g. display, peripheral
-    // power) before entering dormant. It is re-enabled on the way back via the
-    // on_state_changed(PmStateNormal) callback below.
+    if (new_state == _state) {
+        return;
+    }
+    pm_state_t prev = _state;
+    _state = new_state;
+    _state_entered_at = get_absolute_time();
+    // power-keep invariant: held while Active/Sleep, released in Idle.
+    pm_set_power_keep(new_state != PmStateIdle);
+    if (_cb.on_state_changed != nullptr) {
+        _cb.on_state_changed(new_state, prev);
+    }
+}
+
+static bool _pending_cancelable(pm_pending_reason_t reason)
+{
+    return (reason == PmPendingSleep) || (reason == PmPendingShutdown);
+}
+
+static void _begin_pending(pm_pending_reason_t reason, uint32_t announce_ms)
+{
+    _pending = reason;
+    _pending_deadline = make_timeout_time_ms(announce_ms);
+    if (_cb.on_pending != nullptr) {
+        _cb.on_pending(reason);
+    }
+}
+
+static void _do_dormant()
+{
+    // Let the application quiesce its peripherals (display, peripheral power)
+    // before dormant. Re-enabled on the way back via on_state_changed(PmStateActive).
     if (_cb.on_before_dormant != nullptr) {
         _cb.on_before_dormant();
     }
     pm_enter_dormant_and_wake();
-    _state = PmStateNormal;
 }
 
-void pm_start(const pm_callbacks_t* callbacks)
+static void _commit_pending()
+{
+    pm_pending_reason_t reason = _pending;
+    _pending = PmPendingNone;
+    switch (reason) {
+        case PmPendingSleep:
+            // battery nap: latch stays held, dormant, wake back to Active
+            _set_state(PmStateSleep);
+            _do_dormant();
+            _set_state(PmStateActive);
+            break;
+        case PmPendingShutdown:
+        case PmPendingLowBattery:
+            // release the latch; PmStateIdle then charges (USB) or powers off (no USB)
+            _set_state(PmStateIdle);
+            break;
+        case PmPendingCharge:
+            // charging in PmStateIdle: dormant, wake back to Active
+            _do_dormant();
+            _set_state(PmStateActive);
+            break;
+        default:
+            break;
+    }
+}
+
+void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
 {
     if (callbacks != nullptr) {
         _cb = *callbacks;
     }
-    // Select the initial state depending on whether USB is plugged.
-    _state = pm_usb_power_detected() ? PmStateCharge : PmStateNormal;
-    _state_prev = _state;
-    _state_count = 0;
+    if (config != nullptr) {
+        _cfg = *config;
+    }
+    _pending = PmPendingNone;
+    // Boot boundary is PmStateIdle (latch released). Resolve immediately:
+    //   USB present -> stay PmStateIdle (charging path handled by pm_process)
+    //   USB absent  -> go Active (assert power-keep to stay powered)
+    _state = PmStateIdle;
+    _state_prev = PmStateIdle;
+    _state_entered_at = get_absolute_time();
+    if (pm_usb_power_detected()) {
+        pm_set_power_keep(false); // PmStateIdle invariant
+    } else {
+        _set_state(PmStateActive);
+    }
 }
 
 void pm_process()
 {
-    switch (_state) {
-        case PmStateNormal:
-            pm_set_power_keep(true);
-            if (pm_get_low_battery()) {
-                _state = PmStateShutdown;
+    // While a pending (announce) phase is active, forward button events to the
+    // application (so it can pm_cancel()) and auto-commit when the deadline hits.
+    if (_pending != PmPendingNone) {
+        button_action_t btn_act;
+        if (pm_get_btn_evt(&btn_act)) {
+            if (_cb.on_button_event != nullptr) {
+                _cb.on_button_event(btn_act);
             }
-            // User Control Action
+        }
+        pm_clear_btn_evt();
+        if (_pending != PmPendingNone && time_reached(_pending_deadline)) {
+            _commit_pending();
+        }
+        return;
+    }
+
+    switch (_state) {
+        case PmStateActive: {
+            if (pm_get_low_battery()) {
+                _begin_pending(PmPendingLowBattery, _cfg.shutdown_announce_ms);
+                break;
+            }
             button_action_t btn_act;
             if (pm_get_btn_evt(&btn_act)) {
                 switch (btn_act) {
-                    case ButtonPowerLongLong:
-                        _state = PmStateShutdown;
-                        break;
                     case ButtonPowerSingle:
-                        _state = PmStateDeepSleep;
+                        _begin_pending(PmPendingSleep, _cfg.sleep_announce_ms);
+                        break;
+                    case ButtonPowerLongLong:
+                        _begin_pending(PmPendingShutdown, _cfg.shutdown_announce_ms);
                         break;
                     default:
-                        // forward events not consumed by the power state machine
+                        // forward events not consumed as a power trigger
                         if (_cb.on_button_event != nullptr) {
                             _cb.on_button_event(btn_act);
                         }
@@ -460,37 +544,18 @@ void pm_process()
             }
             pm_clear_btn_evt();
             break;
-        case PmStateDeepSleep:
-            if (_state_count >= DORMANT_DWELL_COUNT) {
-                _enter_dormant_sequence();
-            }
-            break;
-        case PmStateShutdown:
-            if (_state_count >= DORMANT_DWELL_COUNT) {
-                _state = PmStateCharge;
-            }
-            break;
-        case PmStateCharge: // same as dormant to minimize active power besides pm_set_power_keep(false)
-            pm_set_power_keep(false);
-            if (_state_count >= DORMANT_DWELL_COUNT) {
-                _enter_dormant_sequence();
+        }
+        case PmStateIdle:
+            // Reached via shutdown/low-battery commit, or as the boot state with
+            // USB. With USB present, announce charging then dormant; without USB
+            // the hardware has already cut power (nothing to do).
+            if (pm_usb_power_detected()) {
+                _begin_pending(PmPendingCharge, _cfg.charge_announce_ms);
             }
             break;
         default:
             break;
     }
-
-    if (_state_prev == _state) {
-        _state_count++;
-    } else {
-        _state_count = 0;
-    }
-    if (_state_prev != _state) {
-        if (_cb.on_state_changed != nullptr) {
-            _cb.on_state_changed(_state, _state_prev);
-        }
-    }
-    _state_prev = _state;
 }
 
 pm_state_t pm_get_state()
@@ -498,7 +563,30 @@ pm_state_t pm_get_state()
     return _state;
 }
 
-uint32_t pm_get_state_count()
+bool pm_get_pending(pm_pending_info_t* out)
 {
-    return _state_count;
+    if (_pending == PmPendingNone) {
+        return false;
+    }
+    if (out != nullptr) {
+        out->reason = _pending;
+        int64_t remaining_us = absolute_time_diff_us(get_absolute_time(), _pending_deadline);
+        out->remaining_ms = (remaining_us > 0) ? (uint32_t)(remaining_us / 1000) : 0;
+        out->cancelable = _pending_cancelable(_pending);
+    }
+    return true;
+}
+
+void pm_cancel()
+{
+    if (_pending != PmPendingNone && _pending_cancelable(_pending)) {
+        _pending = PmPendingNone;
+        // The stable state was unchanged during the pending, so nothing else to do.
+    }
+}
+
+uint32_t pm_get_state_elapsed_ms()
+{
+    int64_t elapsed_us = absolute_time_diff_us(_state_entered_at, get_absolute_time());
+    return (elapsed_us > 0) ? (uint32_t)(elapsed_us / 1000) : 0;
 }

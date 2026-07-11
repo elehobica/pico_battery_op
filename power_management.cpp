@@ -80,8 +80,8 @@ static pm_state_t _state = PmStateIdle;
 static pm_state_t _state_prev = PmStateIdle;
 static absolute_time_t _state_entered_at;
 static bool _boot = false; // true while the initial (boot) PmStateIdle is unresolved
-static pm_pending_reason_t _pending = PmPendingNone;
-static absolute_time_t _pending_deadline;
+static pm_notice_reason_t _notice = PmNoticeNone;
+static absolute_time_t _notice_deadline;
 
 static void _start_serial()
 {
@@ -423,57 +423,55 @@ static void _set_state(pm_state_t new_state)
     pm_state_t prev = _state;
     _state = new_state;
     _state_entered_at = get_absolute_time();
-    // power-keep invariant: held while Active/Sleep, released in Idle.
-    pm_set_power_keep(new_state != PmStateIdle);
+    // power-keep invariant: held while Active, released in Idle.
+    pm_set_power_keep(new_state == PmStateActive);
     if (_cb.on_state_changed != nullptr) {
         _cb.on_state_changed(new_state, prev);
     }
 }
 
-static bool _pending_cancelable(pm_pending_reason_t reason)
+static bool _notice_cancelable(pm_notice_reason_t reason)
 {
-    return (reason == PmPendingSleep) || (reason == PmPendingShutdown);
+    return (reason == PmNoticeSleep) || (reason == PmNoticeShutdown);
 }
 
-static void _begin_pending(pm_pending_reason_t reason, uint32_t announce_ms)
+static void _begin_notice(pm_notice_reason_t reason, uint32_t notice_ms)
 {
-    _pending = reason;
-    _pending_deadline = make_timeout_time_ms(announce_ms);
-    if (_cb.on_pending != nullptr) {
-        _cb.on_pending(reason);
+    _notice = reason;
+    _notice_deadline = make_timeout_time_ms(notice_ms);
+    if (_cb.on_notice != nullptr) {
+        _cb.on_notice(reason);
     }
 }
 
-static void _do_dormant()
+// Enter dormant and resume running. Shared by the battery nap and the charging
+// dormant: the power-keep latch (held for nap, released for charge) is already
+// set by the current state's invariant, so this touches only the callbacks.
+static void _dormant_and_resume()
 {
-    // Let the application quiesce its peripherals (display, peripheral power)
-    // before dormant. Re-enabled on the way back via on_state_changed(PmStateActive).
-    if (_cb.on_before_dormant != nullptr) {
-        _cb.on_before_dormant();
+    if (_cb.on_enter_dormant != nullptr) {
+        _cb.on_enter_dormant();
     }
-    pm_enter_dormant_and_wake();
+    pm_enter_dormant_and_wake();          // blocks until the Power switch
+    _set_state(PmStateActive);            // resume running (no-op if already Active)
+    if (_cb.on_exit_dormant != nullptr) {
+        _cb.on_exit_dormant();
+    }
 }
 
-static void _commit_pending()
+static void _commit_notice()
 {
-    pm_pending_reason_t reason = _pending;
-    _pending = PmPendingNone;
+    pm_notice_reason_t reason = _notice;
+    _notice = PmNoticeNone;
     switch (reason) {
-        case PmPendingSleep:
-            // battery nap: latch stays held, dormant, wake back to Active
-            _set_state(PmStateSleep);
-            _do_dormant();
-            _set_state(PmStateActive);
+        case PmNoticeSleep:    // battery nap from PmStateActive (latch held)
+        case PmNoticeCharge:   // charging dormant from PmStateIdle (latch released)
+            _dormant_and_resume();
             break;
-        case PmPendingShutdown:
-        case PmPendingLowBattery:
+        case PmNoticeShutdown:
+        case PmNoticeLowBattery:
             // release the latch; PmStateIdle then charges (USB) or powers off (no USB)
             _set_state(PmStateIdle);
-            break;
-        case PmPendingCharge:
-            // charging in PmStateIdle: dormant, wake back to Active
-            _do_dormant();
-            _set_state(PmStateActive);
             break;
         default:
             break;
@@ -488,7 +486,7 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
     if (config != nullptr) {
         _cfg = *config;
     }
-    _pending = PmPendingNone;
+    _notice = PmNoticeNone;
     // The initial PmStateIdle is the boot boundary; pm_process() resolves it on
     // the first tick (USB -> charge, no USB -> run). The _boot flag scopes the
     // "PmStateIdle + no USB -> Active" rule to boot only, so a later shutdown
@@ -502,9 +500,9 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
 
 void pm_process()
 {
-    // While a pending (announce) phase is active, forward button events to the
-    // application (so it can pm_cancel()) and auto-commit when the deadline hits.
-    if (_pending != PmPendingNone) {
+    // While a notice (grace phase) is active, forward button events to the
+    // application (so it can pm_cancel_notice()) and auto-commit at the deadline.
+    if (_notice != PmNoticeNone) {
         button_action_t btn_act;
         if (pm_get_btn_evt(&btn_act)) {
             if (_cb.on_button_event != nullptr) {
@@ -512,8 +510,8 @@ void pm_process()
             }
         }
         pm_clear_btn_evt();
-        if (_pending != PmPendingNone && time_reached(_pending_deadline)) {
-            _commit_pending();
+        if (_notice != PmNoticeNone && time_reached(_notice_deadline)) {
+            _commit_notice();
         }
         return;
     }
@@ -521,17 +519,17 @@ void pm_process()
     switch (_state) {
         case PmStateActive: {
             if (pm_get_low_battery()) {
-                _begin_pending(PmPendingLowBattery, _cfg.shutdown_announce_ms);
+                _begin_notice(PmNoticeLowBattery, _cfg.shutdown_notice_ms);
                 break;
             }
             button_action_t btn_act;
             if (pm_get_btn_evt(&btn_act)) {
                 switch (btn_act) {
                     case ButtonPowerSingle:
-                        _begin_pending(PmPendingSleep, _cfg.sleep_announce_ms);
+                        _begin_notice(PmNoticeSleep, _cfg.sleep_notice_ms);
                         break;
                     case ButtonPowerLongLong:
-                        _begin_pending(PmPendingShutdown, _cfg.shutdown_announce_ms);
+                        _begin_notice(PmNoticeShutdown, _cfg.shutdown_notice_ms);
                         break;
                     default:
                         // forward events not consumed as a power trigger
@@ -550,7 +548,7 @@ void pm_process()
             //   no USB & boot   : start running (assert power-keep).
             //   no USB & !boot  : post-shutdown -> the hardware is powering off.
             if (pm_usb_power_detected()) {
-                _begin_pending(PmPendingCharge, _cfg.charge_announce_ms);
+                _begin_notice(PmNoticeCharge, _cfg.charge_notice_ms);
             } else if (_boot) {
                 _set_state(PmStateActive);
             }
@@ -566,26 +564,28 @@ pm_state_t pm_get_state()
     return _state;
 }
 
-bool pm_get_pending(pm_pending_info_t* out)
+bool pm_get_notice(pm_notice_info_t* out)
 {
-    if (_pending == PmPendingNone) {
+    if (_notice == PmNoticeNone) {
         return false;
     }
     if (out != nullptr) {
-        out->reason = _pending;
-        int64_t remaining_us = absolute_time_diff_us(get_absolute_time(), _pending_deadline);
+        out->reason = _notice;
+        int64_t remaining_us = absolute_time_diff_us(get_absolute_time(), _notice_deadline);
         out->remaining_ms = (remaining_us > 0) ? (uint32_t)(remaining_us / 1000) : 0;
-        out->cancelable = _pending_cancelable(_pending);
+        out->cancelable = _notice_cancelable(_notice);
     }
     return true;
 }
 
-void pm_cancel()
+bool pm_cancel_notice()
 {
-    if (_pending != PmPendingNone && _pending_cancelable(_pending)) {
-        _pending = PmPendingNone;
-        // The stable state was unchanged during the pending, so nothing else to do.
+    if (_notice != PmNoticeNone && _notice_cancelable(_notice)) {
+        _notice = PmNoticeNone;
+        // The stable state was unchanged during the notice, so nothing else to do.
+        return true;
     }
+    return false;
 }
 
 uint32_t pm_get_state_elapsed_ms()

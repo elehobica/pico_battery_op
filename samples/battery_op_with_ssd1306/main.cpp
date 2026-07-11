@@ -72,33 +72,31 @@ void display_deinit()
 }
 
 // === Power management callbacks (application side) =======================
-// Peripheral power is turned on whenever the device (re)enters the running state.
-static void on_state_changed(pm_state_t new_state, pm_state_t prev_state)
-{
-    if (new_state == PmStateActive) {
-        set_peripheral_power(true);
-    }
-}
-
 // User switch single push toggles peripheral power (OLED runs under it).
-// Power switch single push during an announce phase cancels it (if cancelable).
+// Power switch single push during a notice cancels it (if cancelable).
 static void on_button_event(button_action_t btn_act)
 {
     if (btn_act == ButtonUserSingle) {
         set_peripheral_power(!get_peripheral_power());
     } else if (btn_act == ButtonPowerSingle) {
-        pm_cancel(); // abort a cancelable pending (GO DORMANT / SHUTDOWN)
+        pm_cancel_notice(); // abort a cancelable notice (GO DORMANT / SHUTDOWN)
     }
 }
 
 // Quiesce the display and peripheral power before the library enters dormant.
-static void on_before_dormant()
+static void on_enter_dormant()
 {
     if (get_peripheral_power()) {
         display_deinit();
         set_peripheral_power(false);
     }
     peri_power_prev = false; // force display re-init after wake via the edge below
+}
+
+// Restore peripheral power after waking (display re-init happens via the edge).
+static void on_exit_dormant()
+{
+    set_peripheral_power(true);
 }
 
 int main()
@@ -113,12 +111,13 @@ int main()
     printf("Battery Op. Demo\n");
 
     pm_callbacks_t callbacks = {
-        .on_state_changed = on_state_changed,
-        .on_pending = nullptr,
+        .on_state_changed = nullptr,
+        .on_notice = nullptr,
         .on_button_event = on_button_event,
-        .on_before_dormant = on_before_dormant,
+        .on_enter_dormant = on_enter_dormant,
+        .on_exit_dormant = on_exit_dormant,
     };
-    pm_start(&callbacks, nullptr); // nullptr config -> default announce durations
+    pm_start(&callbacks, nullptr); // nullptr config -> default notice durations
     set_peripheral_power(true);
 
     while (true) {
@@ -128,8 +127,8 @@ int main()
         // Power state machine (library side; may block while dormant)
         pm_process();
         pm_state_t power_state = pm_get_state();
-        pm_pending_info_t pending;
-        bool has_pending = pm_get_pending(&pending);
+        pm_notice_info_t notice;
+        bool has_notice = pm_get_notice(&notice);
         bool blink = (_millis() / 500) % 2 == 0; // 1 s period, 50% duty
 
         // Display (SSD1306 powered by Peripheral Power)
@@ -163,14 +162,14 @@ int main()
                 } else {
                     ssd1306_draw_string(&disp, 8*0, 8*4, 1, (char*) "Peri. Power: OFF");
                 }
-                // Announce the pending (upcoming) power action.
-                if (has_pending && blink) {
+                // Announce the upcoming power action (notice).
+                if (has_notice && blink) {
                     const char* msg = nullptr;
-                    switch (pending.reason) {
-                        case PmPendingSleep:      msg = "GO DORMANT";  break;
-                        case PmPendingShutdown:   msg = "SHUTDOWN";    break;
-                        case PmPendingLowBattery: msg = "LOW BATTERY"; break;
-                        default:                  break;
+                    switch (notice.reason) {
+                        case PmNoticeSleep:      msg = "GO DORMANT";  break;
+                        case PmNoticeShutdown:   msg = "SHUTDOWN";    break;
+                        case PmNoticeLowBattery: msg = "LOW BATTERY"; break;
+                        default:                 break;
                     }
                     if (msg != nullptr) {
                         ssd1306_draw_string(&disp, 8*0, 8*6, 1, (char*) msg);
@@ -188,7 +187,7 @@ int main()
         peri_power_prev = peri_power;
 
         // Main Process (Do something here)
-        if (power_state == PmStateActive && !has_pending) {
+        if (power_state == PmStateActive && !has_notice) {
             gpio_xor_mask(1UL<<PICO_DEFAULT_LED_PIN);
         } else {
             gpio_put(PICO_DEFAULT_LED_PIN, 0);

@@ -39,55 +39,57 @@ typedef struct element {
 
 // Power state managed by the power management state machine (pm_process()).
 //   PmStateIdle   : power-keep latch released. Boot boundary and shutdown target.
-//              With USB present it charges (dormant); without USB the hardware
-//              powers off. Not a "running" state (the CPU is dormant/off here).
-//   PmStateActive : latch held, fully running.
-//   PmStateSleep  : latch held, dormant battery nap; wakes by Power switch -> Active.
+//                   With USB it charges (dormant); without USB the hardware
+//                   powers off. Not a "running" state.
+//   PmStateActive : latch held, running. A battery nap is a dormant episode that
+//                   stays in PmStateActive; there is no separate "sleep" state.
 typedef enum _pm_state_t {
     PmStateIdle = 0,
-    PmStateActive,
-    PmStateSleep
+    PmStateActive
 } pm_state_t;
 
-// A "pending transition" is an announce/grace phase before a terminal power
-// action is committed. The application paces it (renders the announcement) and
-// may cancel it when cancelable. It auto-commits when its deadline elapses.
-typedef enum _pm_pending_reason_t {
-    PmPendingNone = 0,
-    PmPendingSleep,       // PmStateActive -> dormant       (announce e.g. "GO DORMANT"),  cancelable
-    PmPendingShutdown,    // PmStateActive -> PmStateIdle         (announce e.g. "SHUTDOWN"),    cancelable
-    PmPendingLowBattery,  // PmStateActive -> PmStateIdle         (announce e.g. "LOW BATTERY"), NOT cancelable
-    PmPendingCharge       // PmStateIdle(USB) -> dormant     (announce e.g. "Charging"),    NOT cancelable
-} pm_pending_reason_t;
+// A "notice" is an announce/grace phase before a terminal power action is
+// committed. The application shows it for a grace period; it auto-commits when
+// its deadline elapses. Cancelable notices can be aborted with pm_cancel_notice().
+typedef enum _pm_notice_reason_t {
+    PmNoticeNone = 0,
+    PmNoticeSleep,        // PmStateActive -> dormant nap    (cancelable)
+    PmNoticeShutdown,     // PmStateActive -> PmStateIdle     (cancelable)
+    PmNoticeLowBattery,   // PmStateActive -> PmStateIdle     (NOT cancelable)
+    PmNoticeCharge        // PmStateIdle(USB) -> dormant      (NOT cancelable)
+} pm_notice_reason_t;
 
-typedef struct _pm_pending_info_t {
-    pm_pending_reason_t reason;
-    uint32_t            remaining_ms; // until auto-commit (for countdown / blink)
-    bool                cancelable;
-} pm_pending_info_t;
+typedef struct _pm_notice_info_t {
+    pm_notice_reason_t reason;
+    uint32_t           remaining_ms; // until auto-commit (for countdown / blink)
+    bool               cancelable;
+} pm_notice_info_t;
 
-// Announce durations for the pending phases. Pass to pm_start() (NULL = defaults).
+// Notice grace durations. Pass to pm_start() (NULL = defaults, 3000 ms each).
 typedef struct _pm_config_t {
-    uint32_t sleep_announce_ms;    // "GO DORMANT" before dormant
-    uint32_t shutdown_announce_ms; // "SHUTDOWN" / "LOW BATTERY" before releasing latch
-    uint32_t charge_announce_ms;   // "Charging" before dormant in PmStateIdle
+    uint32_t sleep_notice_ms;    // before dormant nap
+    uint32_t shutdown_notice_ms; // before releasing latch (shutdown / low battery)
+    uint32_t charge_notice_ms;   // before dormant while charging
 } pm_config_t;
 
 // Application callbacks invoked by the power state machine.
 // All members are optional (set to NULL to skip). They are called from
 // pm_process() context (main-loop), never from an ISR.
 typedef struct _pm_callbacks_t {
-    // Called once right after the state machine transitions to a new state.
+    // A state transition occurred (PmStateIdle <-> PmStateActive). Note: a
+    // battery nap stays in PmStateActive, so it does NOT fire this callback.
     void (*on_state_changed)(pm_state_t new_state, pm_state_t prev_state);
-    // Called when a pending (announce) phase begins.
-    void (*on_pending)(pm_pending_reason_t reason);
-    // Called for button events not consumed by the state machine as a trigger
-    // (e.g. ButtonUserSingle). While a pending is active, all button events are
-    // forwarded here so the application can decide to pm_cancel() it.
+    // A notice (grace phase) began.
+    void (*on_notice)(pm_notice_reason_t reason);
+    // Button events not consumed by the state machine as a power trigger
+    // (e.g. ButtonUserSingle). While a notice is active, all button events are
+    // forwarded here so the application can decide to pm_cancel_notice() it.
     void (*on_button_event)(button_action_t btn_act);
-    // Called just before the library enters dormant, so the application can
-    // quiesce its own peripherals (e.g. display_deinit(), peripheral power off).
-    void (*on_before_dormant)();
+    // Just before entering dormant (both nap and charging dormant); the app
+    // quiesces its peripherals (e.g. display_deinit(), peripheral power off).
+    void (*on_enter_dormant)();
+    // Just after waking from dormant. The state is already PmStateActive.
+    void (*on_exit_dormant)();
 } pm_callbacks_t;
 
 void pm_init();
@@ -100,19 +102,20 @@ void pm_reboot();
 bool pm_is_caused_reboot();
 
 // === Power state machine ===
-// Register callbacks and announce-duration config, then select the initial
-// state from USB-plugged detection. Call once after pm_init().
+// Register callbacks and notice-duration config, then select the initial state
+// from USB-plugged detection. Call once after pm_init().
 void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config);
 // Advance the power state machine. Call it periodically from the main loop
 // (timing uses absolute time, so the exact cadence is not critical). This may
-// block while dormant (PmStateSleep / charging in PmStateIdle).
+// block while dormant (battery nap, or charging in PmStateIdle).
 void pm_process();
 // Current power state.
 pm_state_t pm_get_state();
-// Fill *out with the active pending info; returns false if none is pending.
-bool pm_get_pending(pm_pending_info_t* out);
-// Cancel the current pending if it is cancelable (no effect otherwise).
-void pm_cancel();
+// Fill *out with the active notice info; returns false if none is active.
+bool pm_get_notice(pm_notice_info_t* out);
+// Cancel the active notice if it is cancelable. Returns true if a notice was
+// actually canceled, false otherwise (no notice, or not cancelable).
+bool pm_cancel_notice();
 // Milliseconds elapsed since the current state was entered (for blink timing).
 uint32_t pm_get_state_elapsed_ms();
 

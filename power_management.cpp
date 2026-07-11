@@ -76,9 +76,10 @@ static const int QueueLength = 1;
 static const uint32_t DEFAULT_ANNOUNCE_MS = 3000;
 static pm_config_t _cfg = { DEFAULT_ANNOUNCE_MS, DEFAULT_ANNOUNCE_MS, DEFAULT_ANNOUNCE_MS };
 static pm_callbacks_t _cb = {};
-static pm_state_t _state = PmStateActive;
-static pm_state_t _state_prev = PmStateActive;
+static pm_state_t _state = PmStateIdle;
+static pm_state_t _state_prev = PmStateIdle;
 static absolute_time_t _state_entered_at;
+static bool _boot = false; // true while the initial (boot) PmStateIdle is unresolved
 static pm_pending_reason_t _pending = PmPendingNone;
 static absolute_time_t _pending_deadline;
 
@@ -488,17 +489,15 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
         _cfg = *config;
     }
     _pending = PmPendingNone;
-    // Boot boundary is PmStateIdle (latch released). Resolve immediately:
-    //   USB present -> stay PmStateIdle (charging path handled by pm_process)
-    //   USB absent  -> go Active (assert power-keep to stay powered)
+    // The initial PmStateIdle is the boot boundary; pm_process() resolves it on
+    // the first tick (USB -> charge, no USB -> run). The _boot flag scopes the
+    // "PmStateIdle + no USB -> Active" rule to boot only, so a later shutdown
+    // into PmStateIdle (no USB) powers off instead of looping back to Active.
+    _boot = true;
     _state = PmStateIdle;
     _state_prev = PmStateIdle;
     _state_entered_at = get_absolute_time();
-    if (pm_usb_power_detected()) {
-        pm_set_power_keep(false); // PmStateIdle invariant
-    } else {
-        _set_state(PmStateActive);
-    }
+    pm_set_power_keep(false); // PmStateIdle invariant (latch released)
 }
 
 void pm_process()
@@ -546,12 +545,16 @@ void pm_process()
             break;
         }
         case PmStateIdle:
-            // Reached via shutdown/low-battery commit, or as the boot state with
-            // USB. With USB present, announce charging then dormant; without USB
-            // the hardware has already cut power (nothing to do).
+            // Reached as the boot boundary, or via shutdown / low-battery commit.
+            //   USB present    : announce charging, then dormant.
+            //   no USB & boot   : start running (assert power-keep).
+            //   no USB & !boot  : post-shutdown -> the hardware is powering off.
             if (pm_usb_power_detected()) {
                 _begin_pending(PmPendingCharge, _cfg.charge_announce_ms);
+            } else if (_boot) {
+                _set_state(PmStateActive);
             }
+            _boot = false; // the boot boundary is handled once
             break;
         default:
             break;

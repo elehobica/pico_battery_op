@@ -23,8 +23,9 @@ and product-specific UX live in the application. See the example projects under
 ## Required external circuit
 The library assumes a specific discrete power-management circuit (external DC/DC EN control,
 battery voltage divider, USB detect, etc.). It is **mandatory** - many code paths depend on the
-wiring. A dedicated PCB providing the library's base functionality is planned; its schematic will
-be added here. (Individual samples under [samples/](samples/) may also document their own wiring.)
+wiring. A dedicated PCB providing the library's base functionality is available; see its schematic
+[doc/pico_battery_op_pcb.pdf](doc/pico_battery_op_pcb.pdf). (Individual samples under
+[samples/](samples/) may also document their own wiring.)
 
 ### GPIO assignments (library-owned)
 | Signal | GPIO (default) | Direction | Note |

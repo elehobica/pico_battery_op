@@ -108,7 +108,7 @@ pm_config_t pm_get_default_config();
 // the pin assignments, so it must run before any other pm_* call. Call first.
 void pm_init(const pm_config_t* config);
 float pm_get_battery_voltage();
-bool pm_usb_power_detected();
+bool pm_get_usb_power_detected();
 void pm_reboot();
 bool pm_is_caused_reboot();
 

@@ -112,12 +112,12 @@ All callbacks run in `pm_process()` (main-loop) context - never in an ISR.
 ### Query / control
 | Function | Description |
 |---|---|
-| `pm_state_t pm_get_state()` | Current state. |
-| `bool pm_get_deferred(pm_deferred_info_t* out)` | Pending deferred action (reason / remaining_ms / cancelable); `false` if none. |
+| `pm_state_t pm_get_state()` | Get current state. |
+| `bool pm_get_deferred(pm_deferred_info_t* out)` | Get pending deferred action (reason / remaining_ms / cancelable); `false` if none. |
 | `bool pm_cancel_deferred()` | Cancel the pending deferred action if cancelable; returns whether one was canceled. |
-| `uint32_t pm_get_state_elapsed_ms()` | Milliseconds since the current state was entered (blink timing). |
-| `float pm_get_battery_voltage()` | Battery voltage in volts. |
-| `bool pm_usb_power_detected()` | USB-plugged detection. |
+| `uint32_t pm_get_state_elapsed_ms()` | Get milliseconds since the current state was entered (blink timing). |
+| `float pm_get_battery_voltage()` | Get battery voltage in volts. |
+| `bool pm_get_usb_power_detected()` | Get USB power detected. |
 | `void pm_reboot()` / `bool pm_is_caused_reboot()` | Watchdog reboot helpers. |
 
 ## Using the library in your own project

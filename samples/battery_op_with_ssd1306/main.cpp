@@ -144,11 +144,11 @@ int main()
             ssd1306_draw_string(&disp, 8*0, 8*0, 1, (char*) "Battery Op. Demo");
             if (power_state == PmStateIdle) {
                 // latch released: charging while USB is present
-                if (pm_usb_power_detected() && blink) {
+                if (pm_get_usb_power_detected() && blink) {
                     ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char*) "Charging");
                 }
             } else { // PmStateActive (running)
-                if (pm_usb_power_detected()) {
+                if (pm_get_usb_power_detected()) {
                     ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "USB Power");
                     sprintf(str, "VSYS: %4.2f V", battery_voltage);
                 } else {

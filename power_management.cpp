@@ -508,7 +508,7 @@ float pm_get_battery_voltage()
     return _bat_volt;
 }
 
-bool pm_usb_power_detected()
+bool pm_get_usb_power_detected()
 {
     return gpio_get(PIN_USB_POWER_DETECT);
 }
@@ -587,7 +587,7 @@ void pm_process()
             //   USB present    : announce charging, then dormant.
             //   no USB & boot   : start running (assert power-keep).
             //   no USB & !boot  : post-shutdown -> the hardware is powering off.
-            if (pm_usb_power_detected()) {
+            if (pm_get_usb_power_detected()) {
                 _begin_defer(PmDeferredCharge, _cfg.charge_defer_ms);
             } else if (_boot) {
                 _set_state(PmStateActive);

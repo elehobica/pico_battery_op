@@ -7,13 +7,13 @@
 Raspberry Pi Pico / Pico 2 (RP2040 / RP2350) designs. It implements a compact power state
 machine on top of a **mandatory external discrete power circuit**, and provides:
 
-* Power state machine (`Idle` / `Active` / `Sleep`) driven by a physical power switch
+* Power state machine (`Idle` / `Active`) driven by a physical power switch
 * RP2 dormant-mode sleep with clock preserve / restore
 * Power-keep latch control that holds the external DC/DC enabled
 * Battery-voltage monitor with latching low-battery detection
 * USB-plugged (charge) detection
 * Button gesture recognition (single / double / triple / long / long-long)
-* A **pending transition** (announce) mechanism that the application paces and can cancel
+* A **deferred action** mechanism (grace delay, auto-run, cancelable) that the application paces
 * Callback-based integration, so display / peripherals / product UX stay in the application
 
 The library owns **only** power management. Presentation (OLED, LED), peripheral-power control
@@ -46,44 +46,29 @@ Peripheral 3.3 V power control is **not** part of the library; the application o
 powered on by the external H/W circuit (power-switch long push, or USB plug). In firmware this
 condition is represented only at its boundary, as `PmStateIdle`.
 
+### State transition model
+![power state model](doc/power_state_model.png)
+
 ### States (`pm_state_t`)
 | State | power-keep | Meaning |
 |-------|-----------|---------|
 | `PmStateIdle`   | released | Boot boundary and shutdown target. With USB → charging (dormant); without USB → hardware powers off. Not a running state (CPU is dormant/off). |
-| `PmStateActive` | held     | Fully running. |
-| `PmStateSleep`  | held     | Dormant battery nap; wakes by power switch → `PmStateActive`. |
+| `PmStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PmStateActive` — there is no separate sleep state. |
 
-### Pending (announce) mechanism
-Every "wait, then perform a terminal power action" is modeled as a single **pending transition**:
-an announce / grace phase that the **application paces** (renders a message, decides whether to
-cancel) and that **auto-commits** when its deadline elapses. Durations come from `pm_config_t`
+### Deferred actions (`pm_deferred_reason_t`)
+Every "wait, then perform a terminal power action" is modeled as a **deferred action**: scheduled
+now and **run automatically** after a grace delay, unless canceled. Delays come from `pm_config_t`
 (default 3000 ms each) and are measured with absolute time (no fixed loop-cadence assumption).
 
-| Reason (`pm_pending_reason_t`) | Trigger | Commit action | Cancelable |
+| Reason | Trigger | Run action | Cancelable |
 |---|---|---|---|
-| `PmPendingSleep`      | power single push (in `Active`) | dormant → `Active` | yes |
-| `PmPendingShutdown`   | power long push (in `Active`)   | release latch → `Idle` | yes |
-| `PmPendingLowBattery` | low battery (in `Active`)       | release latch → `Idle` | no |
-| `PmPendingCharge`     | entering `Idle` with USB present | dormant → `Active` | no |
+| `PmDeferredSleep`      | power single push (in `Active`)  | dormant nap → `Active` | yes |
+| `PmDeferredShutdown`   | power long push (in `Active`)    | release latch → `Idle` | yes |
+| `PmDeferredLowBattery` | low battery (in `Active`)        | release latch → `Idle` | no |
+| `PmDeferredCharge`     | entering `Idle` with USB present | dormant → `Active` | no |
 
-While a pending is active, the library forwards button events to `on_button_event`, so the
-application can call `pm_cancel()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
-
-### Transitions
-```
-                power single push
-  PmStateActive ───────────────► [Pending Sleep] ──commit──► (dormant) ──wake──┐
-        │  ▲                            │ cancel (power push)                   │
-        │  └────────────────────────────┘                                      │
-        │                                                                       │
-        │ power long push / low battery                                        │
-        ▼                                                                       │
-  [Pending Shutdown / LowBattery] ──commit──► PmStateIdle ─┬─ USB ─► [Pending Charge] ─commit─► (dormant) ─wake─┤
-     (LowBattery is not cancelable)                        │                                                   │
-                                                           └─ no USB ─► hardware power off (Stand-by)           │
-                                                                                                               ▼
-  boot ─► PmStateIdle ─► (USB ? charging : PmStateActive)                                              PmStateActive
-```
+While a deferred action is pending, the library forwards button events to `on_button_event`, so the
+application can call `pm_cancel_deferred()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
 
 ## API
 
@@ -91,15 +76,15 @@ application can call `pm_cancel()` (e.g. a second power push aborts a `Sleep` / 
 | Function | Description |
 |---|---|
 | `void pm_init()` | Hardware init. Call first. |
-| `void pm_start(const pm_callbacks_t* cb, const pm_config_t* cfg)` | Register callbacks and announce-durations (`cfg = NULL` → defaults). Selects the initial state from USB detection. |
+| `void pm_start(const pm_callbacks_t* cb, const pm_config_t* cfg)` | Register callbacks and grace-delay config (`cfg = NULL` → defaults). Selects the initial state from USB detection. |
 | `void pm_process()` | Advance the state machine. Call periodically from the main loop (may block while dormant). |
 
 ### Query / control
 | Function | Description |
 |---|---|
 | `pm_state_t pm_get_state()` | Current state. |
-| `bool pm_get_pending(pm_pending_info_t* out)` | Active pending info (reason / remaining_ms / cancelable); `false` if none. |
-| `void pm_cancel()` | Cancel the current pending if cancelable. |
+| `bool pm_get_deferred(pm_deferred_info_t* out)` | Pending deferred action (reason / remaining_ms / cancelable); `false` if none. |
+| `bool pm_cancel_deferred()` | Cancel the pending deferred action if cancelable; returns whether one was canceled. |
 | `uint32_t pm_get_state_elapsed_ms()` | Milliseconds since the current state was entered (blink timing). |
 | `float pm_get_battery_voltage()` | Battery voltage in volts. |
 | `bool pm_get_low_battery()` | Latches `true` once below threshold. |
@@ -110,10 +95,11 @@ application can call `pm_cancel()` (e.g. a second power push aborts a `Sleep` / 
 ### Callbacks (`pm_callbacks_t`, all optional)
 | Callback | When | Typical use |
 |---|---|---|
-| `on_state_changed(new, prev)` | after a state transition | re-enable peripherals when entering `PmStateActive` |
-| `on_pending(reason)` | an announce phase begins | start rendering the announcement |
-| `on_button_event(btn)` | events not consumed as a power trigger (e.g. `ButtonUserSingle`), and all events during a pending | product features / call `pm_cancel()` |
-| `on_before_dormant()` | just before dormant | quiesce peripherals (display off, peripheral power off) |
+| `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a nap stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
+| `on_deferred(reason)` | a deferred action was scheduled (grace delay began) | start rendering the announcement |
+| `on_button_event(btn)` | events not consumed as a power trigger (e.g. `ButtonUserSingle`), and all events while a deferred action is pending | product features / call `pm_cancel_deferred()` |
+| `on_enter_dormant()` | just before dormant (nap or charging) | quiesce peripherals (display off, peripheral power off) |
+| `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
 
 All callbacks run in `pm_process()` (main-loop) context — never in an ISR.
 
@@ -126,10 +112,10 @@ target_link_libraries(${PROJECT_NAME} pico_battery_op)
 Minimal main loop:
 ```c
 pm_init();
-pm_start(&callbacks, NULL);          // NULL config -> default announce durations
+pm_start(&callbacks, NULL);          // NULL config -> default grace delays
 while (true) {
     pm_process();                    // library runs the power state machine
-    // render UI from pm_get_state() / pm_get_pending()
+    // render UI from pm_get_state() / pm_get_deferred()
     sleep_ms(100);
 }
 ```
@@ -187,6 +173,3 @@ $ cmake -DPICO_PLATFORM=rp2350 -DPICO_BOARD=pico2 ..  # (for Raspberry Pi Pico 2
 $ make -j4
 ```
 * Download "*.uf2" on RPI-RP2 or RP2350 drive
-
-## For more detail about internal code structure
-* See [DeepWiki](https://deepwiki.com/elehobica/pico_battery_op) (powered by [Devin](https://app.devin.ai/invite/WFPByHrQP7TwsUuq))

@@ -5,7 +5,7 @@
 Reference application for the [pico_battery_op](../../README.md) power-management library.
 On top of the library's power state machine it adds an SSD1306 OLED status display,
 peripheral 3.3 V power control, an LED activity indicator, and the product-specific
-button UX. All of this is **application** code — the library itself knows nothing about
+button UX. All of this is **application** code - the library itself knows nothing about
 the display, the LED, or peripheral power.
 
 ## Supported board and peripheral devices
@@ -18,8 +18,8 @@ the display, the LED, or peripheral power.
 This sample requires the mandatory external discrete power circuit assumed by the library
 (external DC/DC EN control, battery voltage divider, USB detect, peripheral power switch).
 
-* Optimized version with SMD devices — [doc/battery_op_with_ssd1306_schematic.pdf](doc/battery_op_with_ssd1306_schematic.pdf)
-* Alternative for breadboard test (non-SMD) — [doc/battery_op_with_ssd1306_breadboard_schematic.pdf](doc/battery_op_with_ssd1306_breadboard_schematic.pdf)
+* Optimized version with SMD devices - [doc/battery_op_with_ssd1306_schematic.pdf](doc/battery_op_with_ssd1306_schematic.pdf)
+* Alternative for breadboard test (non-SMD) - [doc/battery_op_with_ssd1306_breadboard_schematic.pdf](doc/battery_op_with_ssd1306_breadboard_schematic.pdf)
 
 ### Comments for schematic
 * T1 switches battery power to be used only when USB is unplugged. Please refer to the "Using a Battery Charger" section of [pico-datasheet.pdf](https://datasheets.raspberrypi.org/pico/pico-datasheet.pdf)
@@ -48,10 +48,10 @@ The OLED runs under peripheral power. The application:
 ### Buttons
 | Action | Effect |
 |--------|--------|
-| Power switch — single push | start the `Sleep` announce (`GO DORMANT`), then dormant |
-| Power switch — long push | start the `Shutdown` announce, then `Idle` (charge if USB, otherwise power off) |
-| Power switch — single push during a cancelable announce | cancel it (`pm_cancel()`) |
-| User switch — single push | toggle peripheral power (OLED) |
+| Power switch - single push | start the `Sleep` announce (`GO DORMANT`), then dormant |
+| Power switch - long push | start the `Shutdown` announce, then `Idle` (charge if USB, otherwise power off) |
+| Power switch - single push during a cancelable announce | cancel it (`pm_cancel()`) |
+| User switch - single push | toggle peripheral power (OLED) |
 | Low battery detected | start the `LOW BATTERY` announce (not cancelable), then `Idle` |
 
 ### LED

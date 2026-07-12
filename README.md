@@ -32,9 +32,9 @@ see [samples/battery_op_with_ssd1306/README.md](samples/battery_op_with_ssd1306/
 | pin_power_sw         | 28         | in (pull-up) | state transitions + dormant wake (falling edge) |
 | pin_power_keep       | 27         | out          | holds external DC/DC EN |
 | pin_user_sw          | *unused*   | in (pull-up) | forwarded to the app as button events |
-| PIN_USB_POWER_DETECT | 24 (fixed) | in           | charge / USB-plugged detection (fixed) |
-| PIN_DCDC_PSM_CTRL    | 23 (fixed) | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select (fixed) |
-| PIN_BATT_LVL         | 29 (fixed) | ADC3         | Battery level ADC input via 200k / 100k divider (fixed) |
+| PIN_USB_POWER_DETECT | 24 (fixed) | in           | charge / USB-plugged detection |
+| PIN_DCDC_PSM_CTRL    | 23 (fixed) | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select |
+| PIN_BATT_LVL         | 29 (fixed) | ADC3         | Battery level ADC input via 200k / 100k divider |
 
 The three switch / power-keep pins are configurable at runtime through `pm_config_t`
 (see `pm_get_default_config()`); the remaining pins are fixed as `static const` in
@@ -87,24 +87,16 @@ then pass it to `pm_init()` (passing `NULL` uses all defaults).
 
 | Member | Type | Default | Description |
 |---|---|---|---|
-| `pin_power_keep`    | `uint32_t`       | `27`            | Power-keep latch GPIO — see [GPIO assignments](#gpio-assignments-library-owned). |
-| `pin_power_sw`      | `uint32_t`       | `28`            | Power switch / dormant-wake GPIO — see [GPIO assignments](#gpio-assignments-library-owned). |
+| `pin_power_keep`    | `uint32_t`       | `27`            | Power-keep latch GPIO - see [GPIO assignments](#gpio-assignments-library-owned). |
+| `pin_power_sw`      | `uint32_t`       | `28`            | Power switch / dormant-wake GPIO - see [GPIO assignments](#gpio-assignments-library-owned). |
 | `pin_user_sw`       | `uint32_t`       | `PM_PIN_UNUSED` | User switch GPIO; `PM_PIN_UNUSED` (0) means not wired (so GPIO0 cannot be the user switch). |
-| `sleep_defer_ms`    | `uint32_t`       | `3000`          | Grace delay for `PmDeferredSleep` — see [Deferred actions](#deferred-actions-pm_deferred_reason_t). |
-| `shutdown_defer_ms` | `uint32_t`       | `3000`          | Grace delay for `PmDeferredShutdown` / `PmDeferredLowBattery`. |
-| `charge_defer_ms`   | `uint32_t`       | `3000`          | Grace delay for `PmDeferredCharge`. |
-| `callbacks`         | `pm_callbacks_t` | all `NULL`      | Application callbacks — see [Callbacks](#callbacks-pm_callbacks_t-all-optional). |
-
-### Query / control
-| Function | Description |
-|---|---|
-| `pm_state_t pm_get_state()` | Current state. |
-| `bool pm_get_deferred(pm_deferred_info_t* out)` | Pending deferred action (reason / remaining_ms / cancelable); `false` if none. |
-| `bool pm_cancel_deferred()` | Cancel the pending deferred action if cancelable; returns whether one was canceled. |
-| `uint32_t pm_get_state_elapsed_ms()` | Milliseconds since the current state was entered (blink timing). |
-| `float pm_get_battery_voltage()` | Battery voltage in volts. |
-| `bool pm_usb_power_detected()` | USB-plugged detection. |
-| `void pm_reboot()` / `bool pm_is_caused_reboot()` | Watchdog reboot helpers. |
+| `sleep_defer_ms`    | `uint32_t`       | `3000`          | Grace delay in milliseconds for `PmDeferredSleep` - see [Deferred actions](#deferred-actions-pm_deferred_reason_t). |
+| `shutdown_defer_ms` | `uint32_t`       | `3000`          | Grace delay in milliseconds for `PmDeferredShutdown` / `PmDeferredLowBattery`. |
+| `charge_defer_ms`   | `uint32_t`       | `3000`          | Grace delay in milliseconds for `PmDeferredCharge`. |
+| `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k → 3.0), trimmed by measurement. |
+| `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
+| `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PmDeferredLowBattery`). |
+| `callbacks`         | `pm_callbacks_t` | all `NULL`      | Application callbacks - see [Callbacks](#callbacks-pm_callbacks_t-all-optional). |
 
 ### Callbacks (`pm_callbacks_t`, all optional)
 | Callback | When | Typical use |
@@ -116,6 +108,17 @@ then pass it to `pm_init()` (passing `NULL` uses all defaults).
 | `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
 
 All callbacks run in `pm_process()` (main-loop) context - never in an ISR.
+
+### Query / control
+| Function | Description |
+|---|---|
+| `pm_state_t pm_get_state()` | Current state. |
+| `bool pm_get_deferred(pm_deferred_info_t* out)` | Pending deferred action (reason / remaining_ms / cancelable); `false` if none. |
+| `bool pm_cancel_deferred()` | Cancel the pending deferred action if cancelable; returns whether one was canceled. |
+| `uint32_t pm_get_state_elapsed_ms()` | Milliseconds since the current state was entered (blink timing). |
+| `float pm_get_battery_voltage()` | Battery voltage in volts. |
+| `bool pm_usb_power_detected()` | USB-plugged detection. |
+| `void pm_reboot()` / `bool pm_is_caused_reboot()` | Watchdog reboot helpers. |
 
 ## Using the library in your own project
 The library is an `INTERFACE` CMake target. From a sample/app `CMakeLists.txt`:

@@ -52,7 +52,7 @@ static const uint32_t DEFAULT_PIN_USER_SW = PM_PIN_UNUSED; // User Switch (unuse
 
 // Battery Voltage Pin (GPIO29: ADC3) (Raspberry Pi Pico built-in circuit)
 static const uint32_t PIN_BATT_LVL = 29;
-static const uint32_t ADC_PIN_BATT_LVL = 3;
+static const uint32_t ADC_PIN_BATT_LVL = 3;  // ADC3
 
 // ADC characteristics
 static const uint32_t ADC_RESOLUTION = 12;   // 12-bit ADC (raw range 0 .. 2^12-1)
@@ -64,8 +64,17 @@ const int TIMER_ADC_HZ = 20;
 const int BATT_CHECK_INTERVAL_SEC = 5;
 
 // Battery voltage
-const float LOW_BATTERY_THRESHOLD = 2.9; // [V]
-static float _bat_volt = 4.2; // [V]
+// Initial placeholder held until the first ADC sample (~5 s after boot). It must
+// stay above DEFAULT_LOW_BATTERY_THRESHOLD so the low-battery latch does not
+// false-trigger before a real measurement (Li-ion nominal full charge).
+static const float DEFAULT_BATT_VOLTAGE = 4.2; // [V]
+static float _bat_volt = DEFAULT_BATT_VOLTAGE; // [V]
+
+// Default battery monitor parameters (see pm_config_t).
+// ADC3 pin is connected to middle point of voltage divider 200Kohm + 100Kohm.
+static const float DEFAULT_BATT_CALIB_COEF_A = 2.9917; // scale ADC pin voltage -> battery voltage (nominal divider ratio 3.0)
+static const float DEFAULT_BATT_CALIB_COEF_B = -0.020; // constant offset added after scaling [V]
+static const float DEFAULT_LOW_BATTERY_THRESHOLD = 2.9; // [V]
 
 // for preserving clock configuration
 static uint32_t _scr;
@@ -90,6 +99,7 @@ static const uint32_t DEFAULT_DEFER_MS = 3000;
 static pm_config_t _cfg = {
     DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
     DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
+    DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
     {} // callbacks
 };
 static pm_callbacks_t _cb = {};
@@ -117,22 +127,17 @@ static void _set_power_keep(bool value)
 
 static void _monitor_battery_voltage()
 {
-    // ADC Calibration Coefficients
-    // ADC3 pin is connected to middle point of voltage divider 200Kohm + 100Kohm
-    // coef_a: ADC pin voltage -> battery voltage gain (nominal divider ratio 3.0)
-    // coef_b: offset [V]
-    const float coef_a = 2.9917;
-    const float coef_b = -0.020;
+    // ADC calibration coefficients come from the config (see pm_config_t / DEFAULT_BATT_CALIB_COEF_*).
     adc_select_input(ADC_PIN_BATT_LVL);
     float adc_voltage = (float) adc_read() * ADC_REF_VOLTAGE / ((1 << ADC_RESOLUTION) - 1); // [V]
-    _bat_volt = adc_voltage * coef_a + coef_b; // [V]
+    _bat_volt = adc_voltage * _cfg.batt_calib_coef_a + _cfg.batt_calib_coef_b; // [V]
     //printf("Battery Voltage = %f (V)\n", _bat_volt);
 }
 
 static bool _get_low_battery()
 {
     static bool low_battery = false; // never turn to false once true
-    if (!low_battery && _bat_volt < LOW_BATTERY_THRESHOLD) {
+    if (!low_battery && _bat_volt < _cfg.low_battery_threshold) {
         low_battery = true;
     }
     return low_battery;
@@ -445,6 +450,7 @@ pm_config_t pm_get_default_config()
     pm_config_t cfg = {
         DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
         DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
+        DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
         {} // callbacks
     };
     return cfg;

@@ -90,6 +90,13 @@ typedef struct _pm_config_t {
     uint32_t sleep_defer_ms;    // before dormant nap
     uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
     uint32_t charge_defer_ms;   // before dormant while charging
+    // Battery ADC calibration (linear fit):
+    //   battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b.
+    // The ADC pin reads the battery through a 200k/100k divider (nominal ratio 3.0).
+    float batt_calib_coef_a;        // scale from ADC pin voltage to battery voltage,
+                                    // ideally the divider ratio, trimmed by measurement (default 2.9917)
+    float batt_calib_coef_b;        // constant offset added after scaling, compensating divider/ADC bias [V] (default -0.020)
+    float low_battery_threshold;    // low-battery latch threshold [V] (default 2.9)
     // Application callbacks (all optional; see pm_callbacks_t).
     pm_callbacks_t callbacks;
 } pm_config_t;

@@ -17,14 +17,14 @@ machine on top of a **mandatory external discrete power circuit**, and provides:
 * Callback-based integration, so display / peripherals / product UX stay in the application
 
 The library owns **only** power management. Presentation (OLED, LED), peripheral-power control
-and product-specific UX live in the application. See the reference sample
-[samples/battery_op_with_ssd1306](samples/battery_op_with_ssd1306/README.md).
+and product-specific UX live in the application. See the example projects under
+[samples/](samples/).
 
 ## Required external circuit
 The library assumes a specific discrete power-management circuit (external DC/DC EN control,
 battery voltage divider, USB detect, etc.). It is **mandatory** - many code paths depend on the
-wiring. A concrete schematic and a breadboard example are provided with the reference sample:
-see [samples/battery_op_with_ssd1306/README.md](samples/battery_op_with_ssd1306/README.md).
+wiring. A dedicated PCB providing the library's base functionality is planned; its schematic will
+be added here. (Individual samples under [samples/](samples/) may also document their own wiring.)
 
 ### GPIO assignments (library-owned)
 | Signal | GPIO (default) | Direction | Note |
@@ -39,7 +39,7 @@ see [samples/battery_op_with_ssd1306/README.md](samples/battery_op_with_ssd1306/
 The three switch / power-keep pins are configurable at runtime through `pbo_config_t`
 (see `pbo_get_default_config()`); the remaining pins are fixed as `static const` in
 [pico_battery_op.cpp](pico_battery_op.cpp). Peripheral 3.3 V power control is **not** part of
-the library; the application owns it (the sample uses GPIO20, open-drain, active-low).
+the library; the application owns it (for example, a sample drives it on GPIO20, open-drain, active-low).
 
 ## Power state model
 
@@ -55,6 +55,22 @@ condition is represented only at its boundary, as `PboStateIdle`.
 |-------|-----------|---------|
 | `PboStateIdle`   | released | Boot boundary and shutdown target. With USB → charging (dormant); without USB → hardware powers off. Not a running state (CPU is dormant/off). |
 | `PboStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PboStateActive` - there is no separate sleep state. |
+
+### Initial power state (`initial_power_on`)
+`initial_power_on` selects the board's **initial power state when a reset is released while USB is
+not connected**. (With USB connected, boot always takes the charge path, so this setting has no
+effect.)
+
+| `initial_power_on` | Initial state on reset release (no USB) |
+|---|---|
+| `true` (default) | **ON** - come up running. A warm reset (RUN released while still powered) keeps the board running. |
+| `false` | **OFF** - fall back to hardware Stand-by (power off), unless the power switch is held at that moment (a real power-on). The board is then started again by a power-switch push. |
+
+Implementation note: to reach the ON/OFF state cleanly, POWER_KEEP is driven to its final level
+*before* its output is enabled, and is never pulsed low. On a warm reset a low pulse would command
+the board's own DC/DC off, and re-asserting it a moment later can brown-out / hang the board.
+
+Either behavior is valid; the example projects under [samples/](samples/) show both.
 
 ### Deferred actions (`pbo_deferred_reason_t`)
 Every "wait, then perform a terminal power action" is modeled as a **deferred action**: scheduled
@@ -97,6 +113,7 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 | `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k → 3.0), trimmed by measurement. |
 | `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
 | `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PboDeferredLowBattery`). |
+| `initial_power_on`      | `bool`           | `true`          | Initial power state when a reset is released with **USB not connected** (no effect with USB). `true` = ON (come up running); `false` = OFF (Stand-by unless the power switch is held) - see [Initial power state](#initial-power-state-initial_power_on). |
 | `callbacks`         | `pbo_callbacks_t` | all `NULL`      | Application callbacks - see [Callbacks](#callbacks-pbo_callbacks_t-all-optional). |
 
 ### Callbacks (`pbo_callbacks_t`, all optional)
@@ -140,7 +157,7 @@ while (true) {
     sleep_ms(100);
 }
 ```
-See [samples/battery_op_with_ssd1306](samples/battery_op_with_ssd1306/README.md) for a complete example.
+See the example projects under [samples/](samples/) for complete examples.
 
 ## How to build with docker image
 * Builds the firmware inside [pico-sdk-dev-docker:sdk-2.1.1-1.0.0](https://hub.docker.com/r/elehobica/pico-sdk-dev-docker) (same image used by CI). Requires Docker; no local Pico SDK setup is needed.

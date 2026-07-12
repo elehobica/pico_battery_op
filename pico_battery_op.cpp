@@ -96,10 +96,12 @@ static const int QueueLength = 1;
 
 // Power state machine
 static const uint32_t DEFAULT_DEFER_MS = 0; // no delay by default (deferred actions run on the next pbo_process())
+static const bool DEFAULT_INITIAL_POWER_ON = true; // keep the board running after a warm reset by default
 static pbo_config_t _cfg = {
     DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
     DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
     DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
+    DEFAULT_INITIAL_POWER_ON,
     {} // callbacks
 };
 static pbo_callbacks_t _cb = {};
@@ -107,6 +109,7 @@ static pbo_state_t _state = PboStateIdle;
 static pbo_state_t _state_prev = PboStateIdle;
 static absolute_time_t _state_entered_at;
 static bool _boot = false; // true while the initial (boot) PboStateIdle is unresolved
+static bool _initial_power_on = false; // POWER_KEEP level chosen at boot (set in pbo_init, applied by pbo_process)
 static pbo_deferred_reason_t _deferred = PboDeferredNone;
 static absolute_time_t _defer_deadline;
 
@@ -451,6 +454,7 @@ pbo_config_t pbo_get_default_config()
         DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
         DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
         DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
+        DEFAULT_INITIAL_POWER_ON,
         {} // callbacks
     };
     return cfg;
@@ -461,14 +465,32 @@ void pbo_init(const pbo_config_t* config)
     _cfg = (config != nullptr) ? *config : pbo_get_default_config();
     _cb = _cfg.callbacks;
 
-    // Power Keep Pin (Output)
-    gpio_init(_cfg.pin_power_keep);
-    gpio_set_dir(_cfg.pin_power_keep, GPIO_OUT);
-
-    // Power Switch (Input)
+    // Power Switch (Input) - also read below for the boot POWER_KEEP decision.
     gpio_init(_cfg.pin_power_sw);
     gpio_pull_up(_cfg.pin_power_sw);
     gpio_set_dir(_cfg.pin_power_sw, GPIO_IN);
+
+    // USB Power detect Pin = Charge detect (Input) - also read for the boot decision.
+    gpio_init(PIN_USB_POWER_DETECT);
+    gpio_set_dir(PIN_USB_POWER_DETECT, GPIO_IN);
+
+    // Power Keep Pin (Output). Decide the boot level and drive it BEFORE enabling
+    // output, so POWER_KEEP is never pulsed low. On a warm reset while still powered,
+    // a low pulse would command the board's own DC/DC off and can brown-out / hang it.
+    //   USB present            -> release (charge path).
+    //   no USB, initial_power_on    -> latch on (come up running).
+    //   no USB, !initial_power_on   -> latch on only if the power switch is held (a real
+    //                              power-on); otherwise release -> Stand-by (power off).
+    if (gpio_get(PIN_USB_POWER_DETECT)) {
+        _initial_power_on = false;
+    } else if (_cfg.initial_power_on) {
+        _initial_power_on = true;
+    } else {
+        _initial_power_on = (gpio_get(_cfg.pin_power_sw) == false); // switch held == real power-on
+    }
+    gpio_init(_cfg.pin_power_keep);
+    gpio_put(_cfg.pin_power_keep, _initial_power_on); // set level while still input (no low glitch)
+    gpio_set_dir(_cfg.pin_power_keep, GPIO_OUT);
 
     // User Switch (Input) - skipped when not wired (PBO_PIN_UNUSED)
     if (_cfg.pin_user_sw != PBO_PIN_UNUSED) {
@@ -476,10 +498,6 @@ void pbo_init(const pbo_config_t* config)
         gpio_pull_up(_cfg.pin_user_sw);
         gpio_set_dir(_cfg.pin_user_sw, GPIO_IN);
     }
-
-    // USB Power detect Pin = Charge detect (Input)
-    gpio_init(PIN_USB_POWER_DETECT);
-    gpio_set_dir(PIN_USB_POWER_DETECT, GPIO_IN);
 
     // Battery Level Input (ADC)
     adc_init();
@@ -528,14 +546,15 @@ void pbo_start()
     // Config and callbacks were already taken by pbo_init().
     _deferred = PboDeferredNone;
     // The initial PboStateIdle is the boot boundary; pbo_process() resolves it on
-    // the first tick (USB -> charge, no USB -> run). The _boot flag scopes the
-    // "PboStateIdle + no USB -> Active" rule to boot only, so a later shutdown
-    // into PboStateIdle (no USB) powers off instead of looping back to Active.
+    // the first tick (USB -> charge; no USB -> run if latched on at boot, see
+    // pbo_init/_initial_power_on). The _boot flag scopes that rule to boot only, so a
+    // later shutdown into PboStateIdle (no USB) powers off instead of re-running.
     _boot = true;
     _state = PboStateIdle;
     _state_prev = PboStateIdle;
     _state_entered_at = get_absolute_time();
-    _set_power_keep(false); // PboStateIdle invariant (latch released)
+    // POWER_KEEP was already set to its correct boot level by pbo_init() (glitch-free);
+    // do not drive it low here (a low pulse can brown-out the board on a warm reset).
 }
 
 void pbo_process()
@@ -584,12 +603,14 @@ void pbo_process()
         }
         case PboStateIdle:
             // Reached as the boot boundary, or via shutdown / low-battery commit.
-            //   USB present    : announce charging, then dormant.
-            //   no USB & boot   : start running (assert power-keep).
-            //   no USB & !boot  : post-shutdown -> the hardware is powering off.
+            //   USB present     : announce charging, then dormant.
+            //   no USB & boot    : run if pbo_init() latched on (_initial_power_on:
+            //                      initial_power_on, or the power switch was held at boot);
+            //                      otherwise leave POWER_KEEP released -> Stand-by.
+            //   no USB & !boot   : post-shutdown -> the hardware is powering off.
             if (pbo_get_usb_power_detected()) {
                 _begin_defer(PboDeferredCharge, _cfg.charge_defer_ms);
-            } else if (_boot) {
+            } else if (_boot && _initial_power_on) {
                 _set_state(PboStateActive);
             }
             _boot = false; // the boot boundary is handled once

@@ -74,6 +74,7 @@ config.pin_user_sw = 17;                       // this board wires the user swit
 config.sleep_defer_ms = 3000;                  // 3 s announce windows (library default is 0)
 config.shutdown_defer_ms = 3000;
 config.charge_defer_ms = 3000;
+config.initial_power_on = false;                   // a warm reset falls back to Stand-by (press power to start)
 config.callbacks.on_button_event = on_button_event;
 config.callbacks.on_enter_dormant = on_enter_dormant;
 config.callbacks.on_exit_dormant = on_exit_dormant;

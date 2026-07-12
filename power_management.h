@@ -55,12 +55,9 @@ typedef struct _pm_deferred_info_t {
     bool               cancelable;
 } pm_deferred_info_t;
 
-// Grace delays for deferred actions. Pass to pm_start() (NULL = defaults, 3000 ms each).
-typedef struct _pm_config_t {
-    uint32_t sleep_defer_ms;    // before dormant nap
-    uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
-    uint32_t charge_defer_ms;   // before dormant while charging
-} pm_config_t;
+// Sentinel for pm_config_t::pin_user_sw meaning "no user switch wired".
+// (GPIO0 therefore cannot be used as the user switch.)
+#define PM_PIN_UNUSED 0u
 
 // Application callbacks invoked by the power state machine.
 // All members are optional (set to NULL to skip). They are called from
@@ -82,16 +79,36 @@ typedef struct _pm_callbacks_t {
     void (*on_exit_dormant)();
 } pm_callbacks_t;
 
-void pm_init();
+// Configuration passed to pm_init(). Obtain defaults from pm_get_default_config(),
+// override only the members you need, then pass it in (NULL = all defaults).
+typedef struct _pm_config_t {
+    // Configurable GPIO pin assignments (other pins are fixed in the .cpp).
+    uint32_t pin_power_keep;    // software latch holding the DC/DC enabled (default 27)
+    uint32_t pin_power_sw;      // power switch / dormant wake pin (default 28)
+    uint32_t pin_user_sw;       // user switch, PM_PIN_UNUSED if not wired (default PM_PIN_UNUSED)
+    // Grace delays for deferred actions.
+    uint32_t sleep_defer_ms;    // before dormant nap
+    uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
+    uint32_t charge_defer_ms;   // before dormant while charging
+    // Application callbacks (all optional; see pm_callbacks_t).
+    pm_callbacks_t callbacks;
+} pm_config_t;
+
+// Return a config filled with default pin assignments, grace delays and
+// (NULL) callbacks. Override only the members you need, then pass to pm_init().
+pm_config_t pm_get_default_config();
+// Initialize the hardware from the given config (NULL = all defaults). Applies
+// the pin assignments, so it must run before any other pm_* call. Call first.
+void pm_init(const pm_config_t* config);
 float pm_get_battery_voltage();
 bool pm_usb_power_detected();
 void pm_reboot();
 bool pm_is_caused_reboot();
 
 // === Power state machine ===
-// Register callbacks and grace-delay config, then select the initial state
-// from USB-plugged detection. Call once after pm_init().
-void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config);
+// Start the state machine: select the initial state from USB-plugged detection.
+// Call once after pm_init() (which already took the config and callbacks).
+void pm_start();
 // Advance the power state machine. Call it periodically from the main loop
 // (timing uses absolute time, so the exact cadence is not critical). This may
 // block while dormant (battery nap, or charging in PmStateIdle).

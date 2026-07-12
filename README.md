@@ -1,4 +1,4 @@
-# pico_battery_op — Power Management Library for Raspberry Pi Pico / Pico 2
+# pico_battery_op - Power Management Library for Raspberry Pi Pico / Pico 2
 
 [![Build](https://github.com/elehobica/pico_battery_op/actions/workflows/build-binaries.yml/badge.svg)](https://github.com/elehobica/pico_battery_op/actions/workflows/build-binaries.yml)
 
@@ -22,27 +22,28 @@ and product-specific UX live in the application. See the reference sample
 
 ## Required external circuit
 The library assumes a specific discrete power-management circuit (external DC/DC EN control,
-battery voltage divider, USB detect, etc.). It is **mandatory** — many code paths depend on the
+battery voltage divider, USB detect, etc.). It is **mandatory** - many code paths depend on the
 wiring. A concrete schematic and a breadboard example are provided with the reference sample:
 see [samples/battery_op_with_ssd1306/README.md](samples/battery_op_with_ssd1306/README.md).
 
 ### GPIO assignments (library-owned)
-| Signal | GPIO | Direction | Note |
+| Signal | GPIO (default) | Direction | Note |
 |--------|------|-----------|------|
-| Power switch      | 28 | in (pull-up) | state transitions + dormant wake (falling edge) |
-| User switch       | 17 | in (pull-up) | recognized and forwarded to the app as button events |
-| Power-keep latch  | 27 | out          | holds external DC/DC EN |
-| USB power detect  | 24 | in           | charge / USB-plugged detection |
-| DC/DC PSM control | 23 | out          | PFM (efficiency) / PWM (ripple) mode select |
-| Battery level ADC | 29 | ADC3         | via 200k / 100k divider |
+| PIN_POWER_SW         | 28       | in (pull-up) | state transitions + dormant wake (falling edge) - configurable (`pin_power_sw`) |
+| PIN_POWER_KEEP       | 27       | out          | holds external DC/DC EN - configurable (`pin_power_keep`) |
+| PIN_USER_SW          | *unused* | in (pull-up) | forwarded to the app as button events - configurable (`pin_user_sw`, `PM_PIN_UNUSED` = not wired; the sample uses 17) |
+| PIN_USB_POWER_DETECT | 24       | in           | charge / USB-plugged detection (fixed) |
+| PIN_DCDC_PSM_CTRL    | 23       | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select (fixed) |
+| PIN_BATT_LVL         | 29       | ADC3         | Battery level ADC input via 200k / 100k divider (fixed) |
 
-Peripheral 3.3 V power control is **not** part of the library; the application owns it
-(the sample uses GPIO20, open-drain, active-low). Pin constants live as `static const` in
-[power_management.cpp](power_management.cpp).
+The three switch / power-keep pins are configurable at runtime through `pm_config_t`
+(see `pm_get_default_config()`); the remaining pins are fixed as `static const` in
+[power_management.cpp](power_management.cpp). Peripheral 3.3 V power control is **not** part of
+the library; the application owns it (the sample uses GPIO20, open-drain, active-low).
 
 ## Power state model
 
-**Stand-by (hardware)** — the RP2 DC/DC is off and the firmware is not running. The board is
+**Stand-by (hardware)** - the RP2 DC/DC is off and the firmware is not running. The board is
 powered on by the external H/W circuit (power-switch long push, or USB plug). In firmware this
 condition is represented only at its boundary, as `PmStateIdle`.
 
@@ -53,7 +54,7 @@ condition is represented only at its boundary, as `PmStateIdle`.
 | State | power-keep | Meaning |
 |-------|-----------|---------|
 | `PmStateIdle`   | released | Boot boundary and shutdown target. With USB → charging (dormant); without USB → hardware powers off. Not a running state (CPU is dormant/off). |
-| `PmStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PmStateActive` — there is no separate sleep state. |
+| `PmStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PmStateActive` - there is no separate sleep state. |
 
 ### Deferred actions (`pm_deferred_reason_t`)
 Every "wait, then perform a terminal power action" is modeled as a **deferred action**: scheduled
@@ -75,8 +76,9 @@ application can call `pm_cancel_deferred()` (e.g. a second power push aborts a `
 ### Lifecycle
 | Function | Description |
 |---|---|
-| `void pm_init()` | Hardware init. Call first. |
-| `void pm_start(const pm_callbacks_t* cb, const pm_config_t* cfg)` | Register callbacks and grace-delay config (`cfg = NULL` → defaults). Selects the initial state from USB detection. |
+| `pm_config_t pm_get_default_config()` | Return a config with default pins, grace delays and (NULL) callbacks. Override only what you need, then pass to `pm_init()`. |
+| `void pm_init(const pm_config_t* cfg)` | Hardware init from `cfg` (pins / delays / callbacks; `cfg = NULL` → defaults). Applies pin assignments, so call it first. |
+| `void pm_start()` | Start the state machine (config and callbacks were already taken by `pm_init()`); selects the initial state from USB detection. |
 | `void pm_process()` | Advance the state machine. Call periodically from the main loop (may block while dormant). |
 
 ### Query / control
@@ -99,7 +101,7 @@ application can call `pm_cancel_deferred()` (e.g. a second power push aborts a `
 | `on_enter_dormant()` | just before dormant (nap or charging) | quiesce peripherals (display off, peripheral power off) |
 | `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
 
-All callbacks run in `pm_process()` (main-loop) context — never in an ISR.
+All callbacks run in `pm_process()` (main-loop) context - never in an ISR.
 
 ## Using the library in your own project
 The library is an `INTERFACE` CMake target. From a sample/app `CMakeLists.txt`:
@@ -109,8 +111,11 @@ target_link_libraries(${PROJECT_NAME} pico_battery_op)
 ```
 Minimal main loop:
 ```c
-pm_init();
-pm_start(&callbacks, NULL);          // NULL config -> default grace delays
+pm_config_t config = pm_get_default_config();
+config.pin_user_sw = 17;             // override only what your board needs
+config.callbacks.on_button_event = on_button_event;
+pm_init(&config);                    // NULL -> all defaults
+pm_start();
 while (true) {
     pm_process();                    // library runs the power state machine
     // render UI from pm_get_state() / pm_get_deferred()

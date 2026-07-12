@@ -22,7 +22,7 @@
 #include "pico/stdlib.h"
 #include "pico/sleep.h"
 #include "pico/stdio_uart.h"
-#include "pico/stdio_usb.h" // use lib/my_pico_stdio_usb/
+#include "pico/stdio_usb.h"
 #include "pico/util/queue.h"
 
 // === Internal types (not exposed to the application) ===
@@ -39,16 +39,16 @@ typedef struct element {
 } element_t;
 
 // === Pin Settings for power management ===
+// Fixed pins (not configurable).
 // DC/DC mode selection Pin
 static const uint32_t PIN_DCDC_PSM_CTRL = 23;
 // USB Charge detect Pin
 static const uint32_t PIN_USB_POWER_DETECT = 24;
-// Power Keep Pin
-static const uint32_t PIN_POWER_KEEP = 27;
-// Power Switch
-static const uint32_t PIN_POWER_SW = 28;
-// User Switch
-static const uint32_t PIN_USER_SW = 17;
+
+// Default assignments for the configurable pins (see pm_config_t / pm_get_default_config()).
+static const uint32_t DEFAULT_PIN_POWER_KEEP = 27; // Power Keep Pin
+static const uint32_t DEFAULT_PIN_POWER_SW = 28;   // Power Switch
+static const uint32_t DEFAULT_PIN_USER_SW = PM_PIN_UNUSED; // User Switch (unused by default)
 
 // Battery Voltage Pin (GPIO29: ADC3) (Raspberry Pi Pico built-in circuit)
 static const uint32_t PIN_BATT_LVL = 29;
@@ -87,7 +87,11 @@ static const int QueueLength = 1;
 
 // Power state machine
 static const uint32_t DEFAULT_DEFER_MS = 3000;
-static pm_config_t _cfg = { DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS };
+static pm_config_t _cfg = {
+    DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
+    DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
+    {} // callbacks
+};
 static pm_callbacks_t _cb = {};
 static pm_state_t _state = PmStateIdle;
 static pm_state_t _state_prev = PmStateIdle;
@@ -108,7 +112,7 @@ static void _start_serial()
 
 static void _set_power_keep(bool value)
 {
-    gpio_put(PIN_POWER_KEEP, value);
+    gpio_put(_cfg.pin_power_keep, value);
 }
 
 static void _monitor_battery_voltage()
@@ -137,9 +141,9 @@ static bool _get_low_battery()
 static button_status_t _get_sw_status()
 {
     button_status_t ret;
-    if (gpio_get(PIN_POWER_SW) == false) {
+    if (gpio_get(_cfg.pin_power_sw) == false) {
         ret = ButtonPower;
-    } else if (gpio_get(PIN_USER_SW) == false) {
+    } else if (_cfg.pin_user_sw != PM_PIN_UNUSED && gpio_get(_cfg.pin_user_sw) == false) {
         ret = ButtonUser;
     } else {
         ret = ButtonOpen;
@@ -344,7 +348,7 @@ static void _enter_dormant_and_wake()
     _preserve_clock_before_sleep(); // (+b)
     sleep_run_from_xosc();
     // go to dormant until the Power switch is pushed (fall edge detected)
-    sleep_goto_dormant_until_pin(PIN_POWER_SW, true, false);
+    sleep_goto_dormant_until_pin(_cfg.pin_power_sw, true, false);
 
     // ------------------
     // --- Deep Sleep ---
@@ -357,9 +361,9 @@ static void _enter_dormant_and_wake()
     // === [3] treatments after wake up ===
     _start_serial();
     gpio_put(PIN_DCDC_PSM_CTRL, psm); // recover PWM mode
-    gpio_init(PIN_POWER_SW);  // restore GPIO setting for dormant pin
-    gpio_pull_up(PIN_POWER_SW);
-    gpio_set_dir(PIN_POWER_SW, GPIO_IN);
+    gpio_init(_cfg.pin_power_sw);  // restore GPIO setting for dormant pin
+    gpio_pull_up(_cfg.pin_power_sw);
+    gpio_set_dir(_cfg.pin_power_sw, GPIO_IN);
 
     // Ignore the wake-up Power switch push (and its release) so it is not recognized
     // as a button gesture (e.g. ButtonPowerSingle would re-enter dormant immediately).
@@ -436,21 +440,36 @@ static void _run_deferred()
 // Public functions (declaration order follows power_management.h)
 // =========================================================================
 
-void pm_init()
+pm_config_t pm_get_default_config()
 {
+    pm_config_t cfg = {
+        DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
+        DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
+        {} // callbacks
+    };
+    return cfg;
+}
+
+void pm_init(const pm_config_t* config)
+{
+    _cfg = (config != nullptr) ? *config : pm_get_default_config();
+    _cb = _cfg.callbacks;
+
     // Power Keep Pin (Output)
-    gpio_init(PIN_POWER_KEEP);
-    gpio_set_dir(PIN_POWER_KEEP, GPIO_OUT);
+    gpio_init(_cfg.pin_power_keep);
+    gpio_set_dir(_cfg.pin_power_keep, GPIO_OUT);
 
     // Power Switch (Input)
-    gpio_init(PIN_POWER_SW);
-    gpio_pull_up(PIN_POWER_SW);
-    gpio_set_dir(PIN_POWER_SW, GPIO_IN);
+    gpio_init(_cfg.pin_power_sw);
+    gpio_pull_up(_cfg.pin_power_sw);
+    gpio_set_dir(_cfg.pin_power_sw, GPIO_IN);
 
-    // User Switch (Input)
-    gpio_init(PIN_USER_SW);
-    gpio_pull_up(PIN_USER_SW);
-    gpio_set_dir(PIN_USER_SW, GPIO_IN);
+    // User Switch (Input) - skipped when not wired (PM_PIN_UNUSED)
+    if (_cfg.pin_user_sw != PM_PIN_UNUSED) {
+        gpio_init(_cfg.pin_user_sw);
+        gpio_pull_up(_cfg.pin_user_sw);
+        gpio_set_dir(_cfg.pin_user_sw, GPIO_IN);
+    }
 
     // USB Power detect Pin = Charge detect (Input)
     gpio_init(PIN_USB_POWER_DETECT);
@@ -498,14 +517,9 @@ bool pm_is_caused_reboot()
     return watchdog_caused_reboot();
 }
 
-void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
+void pm_start()
 {
-    if (callbacks != nullptr) {
-        _cb = *callbacks;
-    }
-    if (config != nullptr) {
-        _cfg = *config;
-    }
+    // Config and callbacks were already taken by pm_init().
     _deferred = PmDeferredNone;
     // The initial PmStateIdle is the boot boundary; pm_process() resolves it on
     // the first tick (USB -> charge, no USB -> run). The _boot flag scopes the

@@ -107,17 +107,16 @@ int main()
 
     peripheral_power_init();
 
-    pm_init(); // Serial terminal also starts from here
+    // Start from defaults, then override only what this board needs.
+    pm_config_t config = pm_get_default_config();
+    config.pin_user_sw = 17; // this board wires the user switch to GPIO17
+    config.callbacks.on_button_event = on_button_event;
+    config.callbacks.on_enter_dormant = on_enter_dormant;
+    config.callbacks.on_exit_dormant = on_exit_dormant;
+    pm_init(&config); // Serial terminal also starts from here
     printf("Battery Op. Demo\n");
 
-    pm_callbacks_t callbacks = {
-        .on_state_changed = nullptr,
-        .on_deferred = nullptr,
-        .on_button_event = on_button_event,
-        .on_enter_dormant = on_enter_dormant,
-        .on_exit_dormant = on_exit_dormant,
-    };
-    pm_start(&callbacks, nullptr); // nullptr config -> default grace delays
+    pm_start();
     set_peripheral_power(true);
 
     while (true) {

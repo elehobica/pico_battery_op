@@ -69,11 +69,16 @@ The sample registers three callbacks and drives `pm_process()` each loop
 
 ```c
 peripheral_power_init();
-pm_init();
-pm_start(&callbacks, NULL);   // NULL config -> default 3 s announce durations
+pm_config_t config = pm_get_default_config();
+config.pin_user_sw = 17;                       // this board wires the user switch to GPIO17
+config.callbacks.on_button_event = on_button_event;
+config.callbacks.on_enter_dormant = on_enter_dormant;
+config.callbacks.on_exit_dormant = on_exit_dormant;
+pm_init(&config);                              // default 3 s announce durations
+pm_start();
 while (true) {
     pm_process();
-    // render SSD1306 from pm_get_state() / pm_get_pending()
+    // render SSD1306 from pm_get_state() / pm_get_deferred()
     sleep_ms(100);
 }
 ```

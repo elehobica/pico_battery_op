@@ -71,10 +71,13 @@ The sample registers three callbacks and drives `pm_process()` each loop
 peripheral_power_init();
 pm_config_t config = pm_get_default_config();
 config.pin_user_sw = 17;                       // this board wires the user switch to GPIO17
+config.sleep_defer_ms = 3000;                  // 3 s announce windows (library default is 0)
+config.shutdown_defer_ms = 3000;
+config.charge_defer_ms = 3000;
 config.callbacks.on_button_event = on_button_event;
 config.callbacks.on_enter_dormant = on_enter_dormant;
 config.callbacks.on_exit_dormant = on_exit_dormant;
-pm_init(&config);                              // default 3 s announce durations
+pm_init(&config);
 pm_start();
 while (true) {
     pm_process();

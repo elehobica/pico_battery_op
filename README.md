@@ -59,7 +59,8 @@ condition is represented only at its boundary, as `PmStateIdle`.
 ### Deferred actions (`pm_deferred_reason_t`)
 Every "wait, then perform a terminal power action" is modeled as a **deferred action**: scheduled
 now and **run automatically** after a grace delay, unless canceled. Delays come from `pm_config_t`
-(default 3000 ms each) and are measured with absolute time (no fixed loop-cadence assumption).
+(default 0 ms, so the action runs on the next `pm_process()`; set non-zero for an announce window,
+as the ssd1306 sample does) and are measured with absolute time (no fixed loop-cadence assumption).
 
 | Reason | Trigger | Run action | Cancelable |
 |---|---|---|---|
@@ -90,9 +91,9 @@ then pass it to `pm_init()` (passing `NULL` uses all defaults).
 | `pin_power_keep`    | `uint32_t`       | `27`            | Power-keep latch GPIO - see [GPIO assignments](#gpio-assignments-library-owned). |
 | `pin_power_sw`      | `uint32_t`       | `28`            | Power switch / dormant-wake GPIO - see [GPIO assignments](#gpio-assignments-library-owned). |
 | `pin_user_sw`       | `uint32_t`       | `PM_PIN_UNUSED` | User switch GPIO; `PM_PIN_UNUSED` (0) means not wired (so GPIO0 cannot be the user switch). |
-| `sleep_defer_ms`    | `uint32_t`       | `3000`          | Grace delay in milliseconds for `PmDeferredSleep` - see [Deferred actions](#deferred-actions-pm_deferred_reason_t). |
-| `shutdown_defer_ms` | `uint32_t`       | `3000`          | Grace delay in milliseconds for `PmDeferredShutdown` / `PmDeferredLowBattery`. |
-| `charge_defer_ms`   | `uint32_t`       | `3000`          | Grace delay in milliseconds for `PmDeferredCharge`. |
+| `sleep_defer_ms`    | `uint32_t`       | `0`             | Grace delay in milliseconds for `PmDeferredSleep` (0 = run immediately) - see [Deferred actions](#deferred-actions-pm_deferred_reason_t). |
+| `shutdown_defer_ms` | `uint32_t`       | `0`             | Grace delay in milliseconds for `PmDeferredShutdown` / `PmDeferredLowBattery` (0 = run immediately). |
+| `charge_defer_ms`   | `uint32_t`       | `0`             | Grace delay in milliseconds for `PmDeferredCharge` (0 = run immediately). |
 | `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k → 3.0), trimmed by measurement. |
 | `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
 | `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PmDeferredLowBattery`). |

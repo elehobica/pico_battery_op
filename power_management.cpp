@@ -95,7 +95,7 @@ static queue_t btn_evt_queue;
 static const int QueueLength = 1;
 
 // Power state machine
-static const uint32_t DEFAULT_DEFER_MS = 3000;
+static const uint32_t DEFAULT_DEFER_MS = 0; // no grace delay by default (deferred actions run on the next pm_process())
 static pm_config_t _cfg = {
     DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
     DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,

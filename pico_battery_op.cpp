@@ -5,7 +5,7 @@
 /------------------------------------------------------*/
 /* Except for 'recover_from_sleep' part, see comment for copyright */
 
-#include "power_management.h"
+#include "pico_battery_op.h"
 
 //#include <cstdio>
 
@@ -45,10 +45,10 @@ static const uint32_t PIN_DCDC_PSM_CTRL = 23;
 // USB Charge detect Pin
 static const uint32_t PIN_USB_POWER_DETECT = 24;
 
-// Default assignments for the configurable pins (see pm_config_t / pm_get_default_config()).
+// Default assignments for the configurable pins (see pbo_config_t / pbo_get_default_config()).
 static const uint32_t DEFAULT_PIN_POWER_KEEP = 27; // Power Keep Pin
 static const uint32_t DEFAULT_PIN_POWER_SW = 28;   // Power Switch
-static const uint32_t DEFAULT_PIN_USER_SW = PM_PIN_UNUSED; // User Switch (unused by default)
+static const uint32_t DEFAULT_PIN_USER_SW = PBO_PIN_UNUSED; // User Switch (unused by default)
 
 // Battery Voltage Pin (GPIO29: ADC3) (Raspberry Pi Pico built-in circuit)
 static const uint32_t PIN_BATT_LVL = 29;
@@ -70,7 +70,7 @@ const int BATT_CHECK_INTERVAL_SEC = 5;
 static const float DEFAULT_BATT_VOLTAGE = 4.2; // [V]
 static float _bat_volt = DEFAULT_BATT_VOLTAGE; // [V]
 
-// Default battery monitor parameters (see pm_config_t).
+// Default battery monitor parameters (see pbo_config_t).
 // ADC3 pin is connected to middle point of voltage divider 200Kohm + 100Kohm.
 static const float DEFAULT_BATT_CALIB_COEF_A = 2.9917; // scale ADC pin voltage -> battery voltage (nominal divider ratio 3.0)
 static const float DEFAULT_BATT_CALIB_COEF_B = -0.020; // constant offset added after scaling [V]
@@ -95,19 +95,19 @@ static queue_t btn_evt_queue;
 static const int QueueLength = 1;
 
 // Power state machine
-static const uint32_t DEFAULT_DEFER_MS = 0; // no grace delay by default (deferred actions run on the next pm_process())
-static pm_config_t _cfg = {
+static const uint32_t DEFAULT_DEFER_MS = 0; // no delay by default (deferred actions run on the next pbo_process())
+static pbo_config_t _cfg = {
     DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
     DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
     DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
     {} // callbacks
 };
-static pm_callbacks_t _cb = {};
-static pm_state_t _state = PmStateIdle;
-static pm_state_t _state_prev = PmStateIdle;
+static pbo_callbacks_t _cb = {};
+static pbo_state_t _state = PboStateIdle;
+static pbo_state_t _state_prev = PboStateIdle;
 static absolute_time_t _state_entered_at;
-static bool _boot = false; // true while the initial (boot) PmStateIdle is unresolved
-static pm_deferred_reason_t _deferred = PmDeferredNone;
+static bool _boot = false; // true while the initial (boot) PboStateIdle is unresolved
+static pbo_deferred_reason_t _deferred = PboDeferredNone;
 static absolute_time_t _defer_deadline;
 
 // =========================================================================
@@ -127,7 +127,7 @@ static void _set_power_keep(bool value)
 
 static void _monitor_battery_voltage()
 {
-    // ADC calibration coefficients come from the config (see pm_config_t / DEFAULT_BATT_CALIB_COEF_*).
+    // ADC calibration coefficients come from the config (see pbo_config_t / DEFAULT_BATT_CALIB_COEF_*).
     adc_select_input(ADC_PIN_BATT_LVL);
     float adc_voltage = (float) adc_read() * ADC_REF_VOLTAGE / ((1 << ADC_RESOLUTION) - 1); // [V]
     _bat_volt = adc_voltage * _cfg.batt_calib_coef_a + _cfg.batt_calib_coef_b; // [V]
@@ -148,7 +148,7 @@ static button_status_t _get_sw_status()
     button_status_t ret;
     if (gpio_get(_cfg.pin_power_sw) == false) {
         ret = ButtonPower;
-    } else if (_cfg.pin_user_sw != PM_PIN_UNUSED && gpio_get(_cfg.pin_user_sw) == false) {
+    } else if (_cfg.pin_user_sw != PBO_PIN_UNUSED && gpio_get(_cfg.pin_user_sw) == false) {
         ret = ButtonUser;
     } else {
         ret = ButtonOpen;
@@ -378,27 +378,27 @@ static void _enter_dormant_and_wake()
 // === Power state machine =================================================
 // Enter a stable state: enforce its power-keep invariant, timestamp it and
 // notify the application. No-op if already in that state.
-static void _set_state(pm_state_t new_state)
+static void _set_state(pbo_state_t new_state)
 {
     if (new_state == _state) {
         return;
     }
-    pm_state_t prev = _state;
+    pbo_state_t prev = _state;
     _state = new_state;
     _state_entered_at = get_absolute_time();
     // power-keep invariant: held while Active, released in Idle.
-    _set_power_keep(new_state == PmStateActive);
+    _set_power_keep(new_state == PboStateActive);
     if (_cb.on_state_changed != nullptr) {
         _cb.on_state_changed(new_state, prev);
     }
 }
 
-static bool _deferred_cancelable(pm_deferred_reason_t reason)
+static bool _deferred_cancelable(pbo_deferred_reason_t reason)
 {
-    return (reason == PmDeferredSleep) || (reason == PmDeferredShutdown);
+    return (reason == PboDeferredSleep) || (reason == PboDeferredShutdown);
 }
 
-static void _begin_defer(pm_deferred_reason_t reason, uint32_t defer_ms)
+static void _begin_defer(pbo_deferred_reason_t reason, uint32_t defer_ms)
 {
     _deferred = reason;
     _defer_deadline = make_timeout_time_ms(defer_ms);
@@ -416,7 +416,7 @@ static void _dormant_and_resume()
         _cb.on_enter_dormant();
     }
     _enter_dormant_and_wake();             // blocks until the Power switch
-    _set_state(PmStateActive);             // resume running (no-op if already Active)
+    _set_state(PboStateActive);             // resume running (no-op if already Active)
     if (_cb.on_exit_dormant != nullptr) {
         _cb.on_exit_dormant();
     }
@@ -424,17 +424,17 @@ static void _dormant_and_resume()
 
 static void _run_deferred()
 {
-    pm_deferred_reason_t reason = _deferred;
-    _deferred = PmDeferredNone;
+    pbo_deferred_reason_t reason = _deferred;
+    _deferred = PboDeferredNone;
     switch (reason) {
-        case PmDeferredSleep:    // battery nap from PmStateActive (latch held)
-        case PmDeferredCharge:   // charging dormant from PmStateIdle (latch released)
+        case PboDeferredSleep:    // battery nap from PboStateActive (latch held)
+        case PboDeferredCharge:   // charging dormant from PboStateIdle (latch released)
             _dormant_and_resume();
             break;
-        case PmDeferredShutdown:
-        case PmDeferredLowBattery:
-            // release the latch; PmStateIdle then charges (USB) or powers off (no USB)
-            _set_state(PmStateIdle);
+        case PboDeferredShutdown:
+        case PboDeferredLowBattery:
+            // release the latch; PboStateIdle then charges (USB) or powers off (no USB)
+            _set_state(PboStateIdle);
             break;
         default:
             break;
@@ -442,12 +442,12 @@ static void _run_deferred()
 }
 
 // =========================================================================
-// Public functions (declaration order follows power_management.h)
+// Public functions (declaration order follows pico_battery_op.h)
 // =========================================================================
 
-pm_config_t pm_get_default_config()
+pbo_config_t pbo_get_default_config()
 {
-    pm_config_t cfg = {
+    pbo_config_t cfg = {
         DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
         DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
         DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
@@ -456,9 +456,9 @@ pm_config_t pm_get_default_config()
     return cfg;
 }
 
-void pm_init(const pm_config_t* config)
+void pbo_init(const pbo_config_t* config)
 {
-    _cfg = (config != nullptr) ? *config : pm_get_default_config();
+    _cfg = (config != nullptr) ? *config : pbo_get_default_config();
     _cb = _cfg.callbacks;
 
     // Power Keep Pin (Output)
@@ -470,8 +470,8 @@ void pm_init(const pm_config_t* config)
     gpio_pull_up(_cfg.pin_power_sw);
     gpio_set_dir(_cfg.pin_power_sw, GPIO_IN);
 
-    // User Switch (Input) - skipped when not wired (PM_PIN_UNUSED)
-    if (_cfg.pin_user_sw != PM_PIN_UNUSED) {
+    // User Switch (Input) - skipped when not wired (PBO_PIN_UNUSED)
+    if (_cfg.pin_user_sw != PBO_PIN_UNUSED) {
         gpio_init(_cfg.pin_user_sw);
         gpio_pull_up(_cfg.pin_user_sw);
         gpio_set_dir(_cfg.pin_user_sw, GPIO_IN);
@@ -490,7 +490,7 @@ void pm_init(const pm_config_t* config)
     // 1: PWM mode (improved ripple)
     gpio_init(PIN_DCDC_PSM_CTRL);
     gpio_set_dir(PIN_DCDC_PSM_CTRL, GPIO_OUT);
-    // PSM control mode can be overwritten after pm_init()
+    // PSM control mode can be overwritten after pbo_init()
     gpio_put(PIN_DCDC_PSM_CTRL, 0); // PWM mode for best efficiency
 
     // button event queue
@@ -503,46 +503,46 @@ void pm_init(const pm_config_t* config)
     _start_serial();
 }
 
-float pm_get_battery_voltage()
+float pbo_get_battery_voltage()
 {
     return _bat_volt;
 }
 
-bool pm_get_usb_power_detected()
+bool pbo_get_usb_power_detected()
 {
     return gpio_get(PIN_USB_POWER_DETECT);
 }
 
-void pm_reboot()
+void pbo_reboot()
 {
     watchdog_reboot(0, 0, PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS);
 }
 
-bool pm_is_caused_reboot()
+bool pbo_is_caused_reboot()
 {
     return watchdog_caused_reboot();
 }
 
-void pm_start()
+void pbo_start()
 {
-    // Config and callbacks were already taken by pm_init().
-    _deferred = PmDeferredNone;
-    // The initial PmStateIdle is the boot boundary; pm_process() resolves it on
+    // Config and callbacks were already taken by pbo_init().
+    _deferred = PboDeferredNone;
+    // The initial PboStateIdle is the boot boundary; pbo_process() resolves it on
     // the first tick (USB -> charge, no USB -> run). The _boot flag scopes the
-    // "PmStateIdle + no USB -> Active" rule to boot only, so a later shutdown
-    // into PmStateIdle (no USB) powers off instead of looping back to Active.
+    // "PboStateIdle + no USB -> Active" rule to boot only, so a later shutdown
+    // into PboStateIdle (no USB) powers off instead of looping back to Active.
     _boot = true;
-    _state = PmStateIdle;
-    _state_prev = PmStateIdle;
+    _state = PboStateIdle;
+    _state_prev = PboStateIdle;
     _state_entered_at = get_absolute_time();
-    _set_power_keep(false); // PmStateIdle invariant (latch released)
+    _set_power_keep(false); // PboStateIdle invariant (latch released)
 }
 
-void pm_process()
+void pbo_process()
 {
     // While a deferred action is pending, forward button events to the
-    // application (so it can pm_cancel_deferred()) and run it at the deadline.
-    if (_deferred != PmDeferredNone) {
+    // application (so it can pbo_cancel_deferred()) and run it at the deadline.
+    if (_deferred != PboDeferredNone) {
         button_action_t btn_act;
         if (_get_btn_evt(&btn_act)) {
             if (_cb.on_button_event != nullptr) {
@@ -550,26 +550,26 @@ void pm_process()
             }
         }
         _clear_btn_evt();
-        if (_deferred != PmDeferredNone && time_reached(_defer_deadline)) {
+        if (_deferred != PboDeferredNone && time_reached(_defer_deadline)) {
             _run_deferred();
         }
         return;
     }
 
     switch (_state) {
-        case PmStateActive: {
+        case PboStateActive: {
             if (_get_low_battery()) {
-                _begin_defer(PmDeferredLowBattery, _cfg.shutdown_defer_ms);
+                _begin_defer(PboDeferredLowBattery, _cfg.shutdown_defer_ms);
                 break;
             }
             button_action_t btn_act;
             if (_get_btn_evt(&btn_act)) {
                 switch (btn_act) {
                     case ButtonPowerSingle:
-                        _begin_defer(PmDeferredSleep, _cfg.sleep_defer_ms);
+                        _begin_defer(PboDeferredSleep, _cfg.sleep_defer_ms);
                         break;
                     case ButtonPowerLongLong:
-                        _begin_defer(PmDeferredShutdown, _cfg.shutdown_defer_ms);
+                        _begin_defer(PboDeferredShutdown, _cfg.shutdown_defer_ms);
                         break;
                     default:
                         // forward events not consumed as a power trigger
@@ -582,15 +582,15 @@ void pm_process()
             _clear_btn_evt();
             break;
         }
-        case PmStateIdle:
+        case PboStateIdle:
             // Reached as the boot boundary, or via shutdown / low-battery commit.
             //   USB present    : announce charging, then dormant.
             //   no USB & boot   : start running (assert power-keep).
             //   no USB & !boot  : post-shutdown -> the hardware is powering off.
-            if (pm_get_usb_power_detected()) {
-                _begin_defer(PmDeferredCharge, _cfg.charge_defer_ms);
+            if (pbo_get_usb_power_detected()) {
+                _begin_defer(PboDeferredCharge, _cfg.charge_defer_ms);
             } else if (_boot) {
-                _set_state(PmStateActive);
+                _set_state(PboStateActive);
             }
             _boot = false; // the boot boundary is handled once
             break;
@@ -599,14 +599,14 @@ void pm_process()
     }
 }
 
-pm_state_t pm_get_state()
+pbo_state_t pbo_get_state()
 {
     return _state;
 }
 
-bool pm_get_deferred(pm_deferred_info_t* out)
+bool pbo_get_deferred(pbo_deferred_info_t* out)
 {
-    if (_deferred == PmDeferredNone) {
+    if (_deferred == PboDeferredNone) {
         return false;
     }
     if (out != nullptr) {
@@ -618,17 +618,17 @@ bool pm_get_deferred(pm_deferred_info_t* out)
     return true;
 }
 
-bool pm_cancel_deferred()
+bool pbo_cancel_deferred()
 {
-    if (_deferred != PmDeferredNone && _deferred_cancelable(_deferred)) {
-        _deferred = PmDeferredNone;
+    if (_deferred != PboDeferredNone && _deferred_cancelable(_deferred)) {
+        _deferred = PboDeferredNone;
         // The stable state was unchanged while pending, so nothing else to do.
         return true;
     }
     return false;
 }
 
-uint32_t pm_get_state_elapsed_ms()
+uint32_t pbo_get_state_elapsed_ms()
 {
     int64_t elapsed_us = absolute_time_diff_us(_state_entered_at, get_absolute_time());
     return (elapsed_us > 0) ? (uint32_t)(elapsed_us / 1000) : 0;

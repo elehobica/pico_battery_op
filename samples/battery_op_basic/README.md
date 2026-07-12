@@ -20,11 +20,11 @@ power-keep latch on **GPIO27** (the user switch is unused). See the
 ## Behavior
 | State | LED |
 |-------|-----|
-| `PmStateActive` (running) | blinks at 2 Hz (250 ms on / 250 ms off) |
+| `PboStateActive` (running) | blinks at 2 Hz (250 ms on / 250 ms off) |
 | dormant (Sleep nap) | off |
 | any other state | off |
 
-A Sleep nap stays in `PmStateActive` while the CPU is dormant, so the sample turns the LED off in
+A Sleep nap stays in `PboStateActive` while the CPU is dormant, so the sample turns the LED off in
 the `on_enter_dormant` callback to keep it dark while sleeping, regardless of the blink phase.
 
 The power switch drives the state machine exactly as the library defines (single push starts a
@@ -32,17 +32,17 @@ The power switch drives the state machine exactly as the library defines (single
 This sample does not render any of those announces; it only reflects the running state on the LED.
 
 ## How the application integrates with the library
-The sample takes the default config and drives `pm_process()` each loop. Its only callback turns
+The sample takes the default config and drives `pbo_process()` each loop. Its only callback turns
 the LED off before going dormant (see [main.c](main.c)):
 
 ```c
-pm_config_t config = pm_get_default_config();
+pbo_config_t config = pbo_get_default_config();
 config.callbacks.on_enter_dormant = on_enter_dormant; // LED off before dormant
-pm_init(&config);
-pm_start();
+pbo_init(&config);
+pbo_start();
 while (true) {
-    pm_process();
-    // blink the on-board LED at 2 Hz while pm_get_state() == PmStateActive
+    pbo_process();
+    // blink the on-board LED at 2 Hz while pbo_get_state() == PboStateActive
     sleep_ms(50);
 }
 ```

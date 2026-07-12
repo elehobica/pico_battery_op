@@ -11,7 +11,7 @@
 #include "hardware/i2c.h"
 
 #include "ssd1306.h"
-#include "power_management.h"
+#include "pico_battery_op.h"
 
 // Peripheral Power Enable (Active Low, Open Drain, external pull up)
 static const uint32_t PIN_PERI_POWER_ENB = 20;
@@ -79,7 +79,7 @@ static void on_button_event(button_action_t btn_act)
     if (btn_act == ButtonUserSingle) {
         set_peripheral_power(!get_peripheral_power());
     } else if (btn_act == ButtonPowerSingle) {
-        pm_cancel_deferred(); // abort a cancelable action (GO DORMANT / SHUTDOWN)
+        pbo_cancel_deferred(); // abort a cancelable action (GO DORMANT / SHUTDOWN)
     }
 }
 
@@ -108,7 +108,7 @@ int main()
     peripheral_power_init();
 
     // Start from defaults, then override only what this board needs.
-    pm_config_t config = pm_get_default_config();
+    pbo_config_t config = pbo_get_default_config();
     config.pin_user_sw = 17; // this board wires the user switch to GPIO17
     config.sleep_defer_ms = 3000;    // 3 s announce before a dormant nap
     config.shutdown_defer_ms = 3000; // 3 s announce before shutdown / low battery
@@ -116,21 +116,21 @@ int main()
     config.callbacks.on_button_event = on_button_event;
     config.callbacks.on_enter_dormant = on_enter_dormant;
     config.callbacks.on_exit_dormant = on_exit_dormant;
-    pm_init(&config); // Serial terminal also starts from here
+    pbo_init(&config); // Serial terminal also starts from here
     printf("Battery Op. Demo\n");
 
-    pm_start();
+    pbo_start();
     set_peripheral_power(true);
 
     while (true) {
         // Monitor
-        float battery_voltage = pm_get_battery_voltage();
+        float battery_voltage = pbo_get_battery_voltage();
 
         // Power state machine (library side; may block while dormant)
-        pm_process();
-        pm_state_t power_state = pm_get_state();
-        pm_deferred_info_t deferred;
-        bool has_deferred = pm_get_deferred(&deferred);
+        pbo_process();
+        pbo_state_t power_state = pbo_get_state();
+        pbo_deferred_info_t deferred;
+        bool has_deferred = pbo_get_deferred(&deferred);
         bool blink = (_millis() / 500) % 2 == 0; // 1 s period, 50% duty
 
         // Display (SSD1306 powered by Peripheral Power)
@@ -145,13 +145,13 @@ int main()
             char str[64];
             ssd1306_clear(&disp);
             ssd1306_draw_string(&disp, 8*0, 8*0, 1, (char*) "Battery Op. Demo");
-            if (power_state == PmStateIdle) {
+            if (power_state == PboStateIdle) {
                 // latch released: charging while USB is present
-                if (pm_get_usb_power_detected() && blink) {
+                if (pbo_get_usb_power_detected() && blink) {
                     ssd1306_draw_string(&disp, 8*4, 8*4, 1, (char*) "Charging");
                 }
-            } else { // PmStateActive (running)
-                if (pm_get_usb_power_detected()) {
+            } else { // PboStateActive (running)
+                if (pbo_get_usb_power_detected()) {
                     ssd1306_draw_string(&disp, 8*0, 8*2, 1, (char*) "USB Power");
                     sprintf(str, "VSYS: %4.2f V", battery_voltage);
                 } else {
@@ -168,9 +168,9 @@ int main()
                 if (has_deferred && blink) {
                     const char* msg = nullptr;
                     switch (deferred.reason) {
-                        case PmDeferredSleep:      msg = "GO DORMANT";  break;
-                        case PmDeferredShutdown:   msg = "SHUTDOWN";    break;
-                        case PmDeferredLowBattery: msg = "LOW BATTERY"; break;
+                        case PboDeferredSleep:      msg = "GO DORMANT";  break;
+                        case PboDeferredShutdown:   msg = "SHUTDOWN";    break;
+                        case PboDeferredLowBattery: msg = "LOW BATTERY"; break;
                         default:                 break;
                     }
                     if (msg != nullptr) {
@@ -189,7 +189,7 @@ int main()
         peri_power_prev = peri_power;
 
         // Main Process (Do something here)
-        if (power_state == PmStateActive && !has_deferred) {
+        if (power_state == PboStateActive && !has_deferred) {
             gpio_xor_mask(1UL<<PICO_DEFAULT_LED_PIN);
         } else {
             gpio_put(PICO_DEFAULT_LED_PIN, 0);

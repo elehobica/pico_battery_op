@@ -3,7 +3,7 @@ if (NOT TARGET pico_battery_op)
     add_library(pico_battery_op INTERFACE)
 
     target_sources(pico_battery_op INTERFACE
-        ${CMAKE_CURRENT_LIST_DIR}/power_management.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/pico_battery_op.cpp
     )
 
     target_include_directories(pico_battery_op INTERFACE

@@ -30,7 +30,7 @@ This sample requires the mandatory external discrete power circuit assumed by th
 ### Peripheral power (application-owned)
 Peripheral 3.3 V power is controlled by the application on **GPIO20** (open-drain, active-low).
 The OLED runs under peripheral power. The application:
-* turns peripheral power **on** when entering `PmStateActive` (`on_state_changed`),
+* turns peripheral power **on** when entering `PboStateActive` (`on_state_changed`),
 * turns it **off** together with the display before the library goes dormant (`on_before_dormant`),
 * toggles it on a user-switch single push.
 
@@ -42,34 +42,34 @@ The OLED runs under peripheral power. The application:
 ### Display screens
 | State | Display |
 |-------|---------|
-| `PmStateActive` | power source (`USB Power` / `Battery Power`) and voltage, `Peri. Power: ON/OFF`, an uptime clock. During an announce phase the bottom line blinks `GO DORMANT` / `SHUTDOWN` / `LOW BATTERY`. |
-| `PmStateIdle` (USB present) | blinking `Charging`. |
+| `PboStateActive` | power source (`USB Power` / `Battery Power`) and voltage, `Peri. Power: ON/OFF`, an uptime clock. During an announce phase the bottom line blinks `GO DORMANT` / `SHUTDOWN` / `LOW BATTERY`. |
+| `PboStateIdle` (USB present) | blinking `Charging`. |
 
 ### Buttons
 | Action | Effect |
 |--------|--------|
 | Power switch - single push | start the `Sleep` announce (`GO DORMANT`), then dormant |
 | Power switch - long push | start the `Shutdown` announce, then `Idle` (charge if USB, otherwise power off) |
-| Power switch - single push during a cancelable announce | cancel it (`pm_cancel()`) |
+| Power switch - single push during a cancelable announce | cancel it (`pbo_cancel()`) |
 | User switch - single push | toggle peripheral power (OLED) |
 | Low battery detected | start the `LOW BATTERY` announce (not cancelable), then `Idle` |
 
 ### LED
-The on-board LED blinks while running (`PmStateActive` with no pending announce); it is off otherwise.
+The on-board LED blinks while running (`PboStateActive` with no pending announce); it is off otherwise.
 
 ## How the application integrates with the library
-The sample registers three callbacks and drives `pm_process()` each loop
+The sample registers three callbacks and drives `pbo_process()` each loop
 (see [main.cpp](main.cpp)):
 
 | Callback | Application action |
 |---|---|
-| `on_state_changed` | turn peripheral power **on** when entering `PmStateActive` |
-| `on_button_event` | user single push → toggle peripheral power; power single push (during a pending) → `pm_cancel()` |
+| `on_state_changed` | turn peripheral power **on** when entering `PboStateActive` |
+| `on_button_event` | user single push → toggle peripheral power; power single push (during a pending) → `pbo_cancel()` |
 | `on_before_dormant` | `display_deinit()` + peripheral power **off** before dormant |
 
 ```c
 peripheral_power_init();
-pm_config_t config = pm_get_default_config();
+pbo_config_t config = pbo_get_default_config();
 config.pin_user_sw = 17;                       // this board wires the user switch to GPIO17
 config.sleep_defer_ms = 3000;                  // 3 s announce windows (library default is 0)
 config.shutdown_defer_ms = 3000;
@@ -77,11 +77,11 @@ config.charge_defer_ms = 3000;
 config.callbacks.on_button_event = on_button_event;
 config.callbacks.on_enter_dormant = on_enter_dormant;
 config.callbacks.on_exit_dormant = on_exit_dormant;
-pm_init(&config);
-pm_start();
+pbo_init(&config);
+pbo_start();
 while (true) {
-    pm_process();
-    // render SSD1306 from pm_get_state() / pm_get_deferred()
+    pbo_process();
+    // render SSD1306 from pbo_get_state() / pbo_get_deferred()
     sleep_ms(100);
 }
 ```

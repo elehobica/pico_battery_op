@@ -5,10 +5,10 @@
 /------------------------------------------------------*/
 
 #include "pico/stdlib.h"
-#include "power_management.h"
+#include "pico_battery_op.h"
 
 // Turn the LED off just before the library goes dormant (e.g. a Sleep nap, which
-// stays in PmStateActive). This ensures the LED is dark while sleeping, regardless
+// stays in PboStateActive). This ensures the LED is dark while sleeping, regardless
 // of the blink phase at that moment.
 static void on_enter_dormant(void)
 {
@@ -23,18 +23,18 @@ int main(void)
 
     // Power management with the default configuration (no extra devices, no serial
     // output). The only callback turns the LED off before going dormant.
-    pm_config_t config = pm_get_default_config();
+    pbo_config_t config = pbo_get_default_config();
     config.callbacks.on_enter_dormant = on_enter_dormant;
-    pm_init(&config);
-    pm_start();
+    pbo_init(&config);
+    pbo_start();
 
     while (true) {
         // Advance the power state machine (may block while dormant).
-        pm_process();
+        pbo_process();
 
         // While running, blink the on-board LED at 2 Hz (250 ms on / 250 ms off);
         // keep it off in any other state.
-        if (pm_get_state() == PmStateActive) {
+        if (pbo_get_state() == PboStateActive) {
             bool on = (to_ms_since_boot(get_absolute_time()) / 250) % 2 == 0;
             gpio_put(PICO_DEFAULT_LED_PIN, on);
         } else {

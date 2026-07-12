@@ -29,12 +29,12 @@ see [samples/battery_op_with_ssd1306/README.md](samples/battery_op_with_ssd1306/
 ### GPIO assignments (library-owned)
 | Signal | GPIO (default) | Direction | Note |
 |--------|------|-----------|------|
-| PIN_POWER_SW         | 28       | in (pull-up) | state transitions + dormant wake (falling edge) - configurable (`pin_power_sw`) |
-| PIN_POWER_KEEP       | 27       | out          | holds external DC/DC EN - configurable (`pin_power_keep`) |
-| PIN_USER_SW          | *unused* | in (pull-up) | forwarded to the app as button events - configurable (`pin_user_sw`, `PM_PIN_UNUSED` = not wired; the sample uses 17) |
-| PIN_USB_POWER_DETECT | 24       | in           | charge / USB-plugged detection (fixed) |
-| PIN_DCDC_PSM_CTRL    | 23       | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select (fixed) |
-| PIN_BATT_LVL         | 29       | ADC3         | Battery level ADC input via 200k / 100k divider (fixed) |
+| pin_power_sw         | 28         | in (pull-up) | state transitions + dormant wake (falling edge) |
+| pin_power_keep       | 27         | out          | holds external DC/DC EN |
+| pin_user_sw          | *unused*   | in (pull-up) | forwarded to the app as button events |
+| PIN_USB_POWER_DETECT | 24 (fixed) | in           | charge / USB-plugged detection (fixed) |
+| PIN_DCDC_PSM_CTRL    | 23 (fixed) | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select (fixed) |
+| PIN_BATT_LVL         | 29 (fixed) | ADC3         | Battery level ADC input via 200k / 100k divider (fixed) |
 
 The three switch / power-keep pins are configurable at runtime through `pm_config_t`
 (see `pm_get_default_config()`); the remaining pins are fixed as `static const` in
@@ -80,6 +80,20 @@ application can call `pm_cancel_deferred()` (e.g. a second power push aborts a `
 | `void pm_init(const pm_config_t* cfg)` | Hardware init from `cfg` (pins / delays / callbacks; `cfg = NULL` → defaults). Applies pin assignments, so call it first. |
 | `void pm_start()` | Start the state machine (config and callbacks were already taken by `pm_init()`); selects the initial state from USB detection. |
 | `void pm_process()` | Advance the state machine. Call periodically from the main loop (may block while dormant). |
+
+### Configuration (`pm_config_t`)
+Obtain a fully-populated struct from `pm_get_default_config()`, override only the members you need,
+then pass it to `pm_init()` (passing `NULL` uses all defaults).
+
+| Member | Type | Default | Description |
+|---|---|---|---|
+| `pin_power_keep`    | `uint32_t`       | `27`            | Power-keep latch GPIO — see [GPIO assignments](#gpio-assignments-library-owned). |
+| `pin_power_sw`      | `uint32_t`       | `28`            | Power switch / dormant-wake GPIO — see [GPIO assignments](#gpio-assignments-library-owned). |
+| `pin_user_sw`       | `uint32_t`       | `PM_PIN_UNUSED` | User switch GPIO; `PM_PIN_UNUSED` (0) means not wired (so GPIO0 cannot be the user switch). |
+| `sleep_defer_ms`    | `uint32_t`       | `3000`          | Grace delay for `PmDeferredSleep` — see [Deferred actions](#deferred-actions-pm_deferred_reason_t). |
+| `shutdown_defer_ms` | `uint32_t`       | `3000`          | Grace delay for `PmDeferredShutdown` / `PmDeferredLowBattery`. |
+| `charge_defer_ms`   | `uint32_t`       | `3000`          | Grace delay for `PmDeferredCharge`. |
+| `callbacks`         | `pm_callbacks_t` | all `NULL`      | Application callbacks — see [Callbacks](#callbacks-pm_callbacks_t-all-optional). |
 
 ### Query / control
 | Function | Description |

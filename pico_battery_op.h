@@ -98,12 +98,6 @@ typedef struct _pbo_config_t {
                                     // ideally the divider ratio, trimmed by measurement (default 2.9917)
     float batt_calib_coef_b;        // constant offset added after scaling, compensating divider/ADC bias [V] (default -0.020)
     float low_battery_threshold;    // low-battery latch threshold [V] (default 2.9)
-    // Power-keep behavior right after boot (e.g. a warm RUN reset while still powered).
-    //   true  : come up running (assert POWER_KEEP immediately, without a low glitch).
-    //   false : release POWER_KEEP unless the power switch is held, so a warm reset
-    //           falls back to hardware Stand-by (power off), like a normal shutdown.
-    // No effect when USB is present at boot (that always takes the charge path).
-    bool initial_power_on;              // default true
     // Application callbacks (all optional; see pbo_callbacks_t).
     pbo_callbacks_t callbacks;
 } pbo_config_t;

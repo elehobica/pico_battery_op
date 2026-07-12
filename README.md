@@ -57,21 +57,21 @@ condition is represented only at its boundary, as `PboStateIdle`.
 | `PboStateIdle`   | released | Boot boundary and shutdown target. With USB → charging (dormant); without USB → hardware powers off. Not a running state (CPU is dormant/off). |
 | `PboStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PboStateActive` - there is no separate sleep state. |
 
-### Initial power state (`initial_power_on`)
-`initial_power_on` selects the board's **initial power state when a reset is released while USB is
-not connected**. (With USB connected, boot always takes the charge path, so this setting has no
-effect.)
+### Boot / power-on behavior
+By default, when USB is not connected, the board is in **Power OFF (Stand-by)** right after a reset
+is released; turn it on with the **Power ON switch** (which sets the DC/DC latch in hardware). When
+**USB is connected**, the board powers up and enters DeepSleep (charge dormant); power is still
+supplied over USB in this state, so a firmware update (flashing over USB) is possible. The firmware
+decides the boot state as follows:
 
-| `initial_power_on` | Initial state on reset release (no USB) |
+| Condition | Result |
 |---|---|
-| `true` (default) | **ON** - come up running. A warm reset (RUN released while still powered) keeps the board running. |
-| `false` | **OFF** - fall back to hardware Stand-by (power off), unless the power switch is held at that moment (a real power-on). The board is then started again by a power-switch push. |
+| USB present | powered up, then DeepSleep (charge dormant); USB keeps it powered. |
+| No USB, Power ON switch held (a real power-on) | come up running. |
+| No USB, switch not held (e.g. a warm RUN reset) | Power OFF (hardware Stand-by). |
 
-Implementation note: to reach the ON/OFF state cleanly, POWER_KEEP is driven to its final level
-*before* its output is enabled, and is never pulsed low. On a warm reset a low pulse would command
-the board's own DC/DC off, and re-asserting it a moment later can brown-out / hang the board.
-
-Either behavior is valid; the example projects under [samples/](samples/) show both.
+So with no USB, a reset always restarts from **Power OFF** regardless of the state before the reset;
+press the Power ON switch to run again.
 
 ### Deferred actions (`pbo_deferred_reason_t`)
 Every "wait, then perform a terminal power action" is modeled as a **deferred action**: scheduled
@@ -114,7 +114,6 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 | `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k → 3.0), trimmed by measurement. |
 | `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
 | `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PboDeferredLowBattery`). |
-| `initial_power_on`      | `bool`           | `true`          | Initial power state when a reset is released with **USB not connected** (no effect with USB). `true` = ON (come up running); `false` = OFF (Stand-by unless the power switch is held) - see [Initial power state](#initial-power-state-initial_power_on). |
 | `callbacks`         | `pbo_callbacks_t` | all `NULL`      | Application callbacks - see [Callbacks](#callbacks-pbo_callbacks_t-all-optional). |
 
 ### Callbacks (`pbo_callbacks_t`, all optional)

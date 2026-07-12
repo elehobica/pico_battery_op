@@ -31,10 +31,8 @@ The power switch drives the state machine exactly as the library defines (single
 `Sleep` announce then dormant, long push starts a `Shutdown`, low battery latches a shutdown).
 This sample does not render any of those announces; it only reflects the running state on the LED.
 
-This sample keeps the default `initial_power_on = true`, so when a reset is released with USB not
-connected the board comes up running (ON). See
-[Initial power state](../../README.md#initial-power-state-initial_power_on) for the alternative
-(`false` = OFF, which falls back to Stand-by, as `battery_op_with_ssd1306` uses).
+When a reset is released with USB not connected the board restarts from OFF (Stand-by); press the
+power switch to run it. See [Boot / power-on behavior](../../README.md#boot--power-on-behavior).
 
 ## How the application integrates with the library
 The sample takes the default config and drives `pbo_process()` each loop. Its only callback turns

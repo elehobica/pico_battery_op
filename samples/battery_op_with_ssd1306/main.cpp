@@ -113,7 +113,6 @@ int main()
     config.sleep_defer_ms = 3000;    // 3 s announce before a dormant nap
     config.shutdown_defer_ms = 3000; // 3 s announce before shutdown / low battery
     config.charge_defer_ms = 3000;   // 3 s announce before charging dormant
-    config.initial_power_on = false;     // a warm reset falls back to Stand-by (press power to start)
     config.callbacks.on_button_event = on_button_event;
     config.callbacks.on_enter_dormant = on_enter_dormant;
     config.callbacks.on_exit_dormant = on_exit_dormant;

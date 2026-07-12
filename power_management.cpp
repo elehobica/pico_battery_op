@@ -106,6 +106,11 @@ static void _start_serial()
     stdio_usb_init(); // don't call multiple times without stdio_usb_deinit because of duplicated IRQ calls
 }
 
+static void _set_power_keep(bool value)
+{
+    gpio_put(PIN_POWER_KEEP, value);
+}
+
 static void _monitor_battery_voltage()
 {
     // ADC Calibration Coefficients
@@ -118,6 +123,15 @@ static void _monitor_battery_voltage()
     float adc_voltage = (float) adc_read() * ADC_REF_VOLTAGE / ((1 << ADC_RESOLUTION) - 1); // [V]
     _bat_volt = adc_voltage * coef_a + coef_b; // [V]
     //printf("Battery Voltage = %f (V)\n", _bat_volt);
+}
+
+static bool _get_low_battery()
+{
+    static bool low_battery = false; // never turn to false once true
+    if (!low_battery && _bat_volt < LOW_BATTERY_THRESHOLD) {
+        low_battery = true;
+    }
+    return low_battery;
 }
 
 static button_status_t _get_sw_status()
@@ -364,7 +378,7 @@ static void _set_state(pm_state_t new_state)
     _state = new_state;
     _state_entered_at = get_absolute_time();
     // power-keep invariant: held while Active, released in Idle.
-    pm_set_power_keep(new_state == PmStateActive);
+    _set_power_keep(new_state == PmStateActive);
     if (_cb.on_state_changed != nullptr) {
         _cb.on_state_changed(new_state, prev);
     }
@@ -464,29 +478,9 @@ void pm_init()
     _start_serial();
 }
 
-void pm_set_power_keep(bool value)
-{
-    gpio_put(PIN_POWER_KEEP, value);
-}
-
-bool pm_get_low_battery()
-{
-    static bool low_battery = false; // never turn to false once true
-    if (!low_battery && _bat_volt < LOW_BATTERY_THRESHOLD) {
-        low_battery = true;
-    }
-    return low_battery;
-}
-
 float pm_get_battery_voltage()
 {
     return _bat_volt;
-}
-
-bool pm_get_power_sw()
-{
-    // True if Low
-    return !gpio_get(PIN_POWER_SW);
 }
 
 bool pm_usb_power_detected()
@@ -521,7 +515,7 @@ void pm_start(const pm_callbacks_t* callbacks, const pm_config_t* config)
     _state = PmStateIdle;
     _state_prev = PmStateIdle;
     _state_entered_at = get_absolute_time();
-    pm_set_power_keep(false); // PmStateIdle invariant (latch released)
+    _set_power_keep(false); // PmStateIdle invariant (latch released)
 }
 
 void pm_process()
@@ -544,7 +538,7 @@ void pm_process()
 
     switch (_state) {
         case PmStateActive: {
-            if (pm_get_low_battery()) {
+            if (_get_low_battery()) {
                 _begin_defer(PmDeferredLowBattery, _cfg.shutdown_defer_ms);
                 break;
             }

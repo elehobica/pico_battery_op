@@ -83,10 +83,7 @@ typedef struct _pm_callbacks_t {
 } pm_callbacks_t;
 
 void pm_init();
-void pm_set_power_keep(bool value);
-bool pm_get_low_battery();
 float pm_get_battery_voltage();
-bool pm_get_power_sw();
 bool pm_usb_power_detected();
 void pm_reboot();
 bool pm_is_caused_reboot();

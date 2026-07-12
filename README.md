@@ -87,9 +87,7 @@ application can call `pm_cancel_deferred()` (e.g. a second power push aborts a `
 | `bool pm_cancel_deferred()` | Cancel the pending deferred action if cancelable; returns whether one was canceled. |
 | `uint32_t pm_get_state_elapsed_ms()` | Milliseconds since the current state was entered (blink timing). |
 | `float pm_get_battery_voltage()` | Battery voltage in volts. |
-| `bool pm_get_low_battery()` | Latches `true` once below threshold. |
 | `bool pm_usb_power_detected()` | USB-plugged detection. |
-| `void pm_set_power_keep(bool)` | Manual latch control (normally managed by the state machine). |
 | `void pm_reboot()` / `bool pm_is_caused_reboot()` | Watchdog reboot helpers. |
 
 ### Callbacks (`pm_callbacks_t`, all optional)

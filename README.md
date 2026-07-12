@@ -7,13 +7,14 @@
 Raspberry Pi Pico / Pico 2 (RP2040 / RP2350) designs. It implements a compact power state
 machine on top of a **mandatory external discrete power circuit**, and provides:
 
-* Power state machine (`Idle` / `Active`) driven by a physical power switch
-* RP2 dormant-mode sleep with clock preserve / restore
-* Power-keep latch control that holds the external DC/DC enabled
-* Battery-voltage monitor with latching low-battery detection
-* USB-plugged (charge) detection
-* Button gesture recognition (single / double / triple / long / long-long)
-* A **deferred action** mechanism (delay, auto-run, cancelable) that the application paces
+* Power state machine (`Idle` / `Active`) driven by a push button switch
+* RP2 (rp2040, rp2350) dormant-mode sleep with clock preserve / restore
+* Power-keep latch control that holds the on-board DC/DC enabled
+* Battery-voltage monitor
+* Low-battery detection
+* USB-power-plugged (charge) detection
+* Button action recognition (single / double / triple / long / long-long)
+* A **deferred action** mechanism (delay, auto-run, cancelable) that the application should determine
 * Callback-based integration, so display / peripherals / product UX stay in the application
 
 The library owns **only** power management. Presentation (OLED, LED), peripheral-power control
@@ -21,8 +22,7 @@ and product-specific UX live in the application. See the example projects under
 [samples/](samples/).
 
 ## Required external circuit
-The library assumes a specific discrete power-management circuit (external DC/DC EN control,
-battery voltage divider, USB detect, etc.). It is **mandatory** - many code paths depend on the
+The library assumes a specific discrete power-management circuit (power push switch, on-board DC/DC EN control for power keep and charging circuit, etc.). It is **mandatory** - many code paths depend on the
 wiring. A dedicated PCB providing the library's base functionality is available; see its schematic
 [doc/pico_battery_op_pcb.pdf](doc/pico_battery_op_pcb.pdf). (Individual samples under
 [samples/](samples/) may also document their own wiring.)
@@ -31,7 +31,7 @@ wiring. A dedicated PCB providing the library's base functionality is available;
 | Signal | GPIO (default) | Direction | Note |
 |--------|------|-----------|------|
 | pin_power_sw         | 28         | in (pull-up) | state transitions + dormant wake (falling edge) |
-| pin_power_keep       | 27         | out          | holds external DC/DC EN |
+| pin_power_keep       | 27         | out          | holds on-board DC/DC EN |
 | pin_user_sw          | *unused*   | in (pull-up) | forwarded to the app as button events |
 | PIN_USB_POWER_DETECT | 24 (fixed) | in           | charge / USB-plugged detection |
 | PIN_DCDC_PSM_CTRL    | 23 (fixed) | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select |
@@ -54,7 +54,7 @@ condition is represented only at its boundary, as `PboStateIdle`.
 ### States (`pbo_state_t`)
 | State | power-keep | Meaning |
 |-------|-----------|---------|
-| `PboStateIdle`   | released | Boot boundary and shutdown target. With USB → charging (dormant); without USB → hardware powers off. Not a running state (CPU is dormant/off). |
+| `PboStateIdle`   | released | Boot boundary and shutdown target. With USB -> charging (dormant); without USB -> hardware powers off. Not a running state (CPU is dormant/off). |
 | `PboStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PboStateActive` - there is no separate sleep state. |
 
 ### Boot / power-on behavior
@@ -81,10 +81,10 @@ as the ssd1306 sample does) and are measured with absolute time (no fixed loop-c
 
 | Reason | Trigger | Run action | Cancelable |
 |---|---|---|---|
-| `PboDeferredSleep`      | power single push (in `Active`)  | dormant nap → `Active` | yes |
-| `PboDeferredShutdown`   | power long push (in `Active`)    | release latch → `Idle` | yes |
-| `PboDeferredLowBattery` | low battery (in `Active`)        | release latch → `Idle` | no |
-| `PboDeferredCharge`     | entering `Idle` with USB present | dormant → `Active` | no |
+| `PboDeferredSleep`      | power single push (in `Active`)  | dormant nap -> `Active` | yes |
+| `PboDeferredShutdown`   | power long push (in `Active`)    | release latch -> `Idle` | yes |
+| `PboDeferredLowBattery` | low battery (in `Active`)        | release latch -> `Idle` | no |
+| `PboDeferredCharge`     | entering `Idle` with USB present | dormant -> `Active` | no |
 
 While a deferred action is pending, the library forwards button events to `on_button_event`, so the
 application can call `pbo_cancel_deferred()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
@@ -95,7 +95,7 @@ application can call `pbo_cancel_deferred()` (e.g. a second power push aborts a 
 | Function | Description |
 |---|---|
 | `pbo_config_t pbo_get_default_config()` | Return a config with default pins, delays and (NULL) callbacks. Override only what you need, then pass to `pbo_init()`. |
-| `void pbo_init(const pbo_config_t* cfg)` | Hardware init from `cfg` (pins / delays / callbacks; `cfg = NULL` → defaults). Applies pin assignments, so call it first. |
+| `void pbo_init(const pbo_config_t* cfg)` | Hardware init from `cfg` (pins / delays / callbacks; `cfg = NULL` -> defaults). Applies pin assignments, so call it first. |
 | `void pbo_start()` | Start the state machine (config and callbacks were already taken by `pbo_init()`); selects the initial state from USB detection. |
 | `void pbo_process()` | Advance the state machine. Call periodically from the main loop (may block while dormant). |
 
@@ -111,7 +111,7 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 | `sleep_defer_ms`    | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredSleep` (0 = run immediately) - see [Deferred actions](#deferred-actions-pbo_deferred_reason_t). |
 | `shutdown_defer_ms` | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredShutdown` / `PboDeferredLowBattery` (0 = run immediately). |
 | `charge_defer_ms`   | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredCharge` (0 = run immediately). |
-| `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k → 3.0), trimmed by measurement. |
+| `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k -> 3.0), trimmed by measurement. |
 | `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
 | `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PboDeferredLowBattery`). |
 | `callbacks`         | `pbo_callbacks_t` | all `NULL`      | Application callbacks - see [Callbacks](#callbacks-pbo_callbacks_t-all-optional). |

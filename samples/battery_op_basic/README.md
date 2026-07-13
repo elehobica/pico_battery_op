@@ -15,7 +15,7 @@ by the library (external DC/DC EN control, battery voltage divider, USB detect) 
 see the schematics in the [battery_op_with_ssd1306](../battery_op_with_ssd1306/README.md) sample.
 Because the configuration is left at its defaults, the power switch is on **GPIO28** and the
 power-keep latch on **GPIO27** (the user switch is unused). See the
-[GPIO assignments](../../README.md#gpio-assignments-library-owned) in the library README.
+[GPIO assignments](../../README.md#gpio-assignments-for-rp2) in the library README.
 
 ## Behavior
 | State | LED |

@@ -15,19 +15,44 @@ machine on top of a **mandatory external discrete power circuit**, and provides:
 * USB-power-plugged (charge) detection
 * Button action recognition (single / double / triple / long / long-long)
 * A **deferred action** mechanism (delay, auto-run, cancelable) that the application should determine
-* Callback-based integration, so display / peripherals / product UX stay in the application
+* Callback-based integration, to implement application-specific logic on the user side
 
 The library owns **only** power management. Presentation (OLED, LED), peripheral-power control
 and product-specific UX live in the application. See the example projects under
 [samples/](samples/).
 
 ## Required external circuit
-The library assumes a specific discrete power-management circuit (power push switch, on-board DC/DC EN control for power keep and charging circuit, etc.). It is **mandatory** - many code paths depend on the
+The library assumes a specific discrete power-management circuit (power push switch, DC/DC enable control for power keep and charging circuit, etc.). It is **mandatory** - many code paths depend on the
 wiring. A dedicated PCB providing the library's base functionality is available; see its schematic
 [doc/pico_battery_op_pcb.pdf](doc/pico_battery_op_pcb.pdf). (Individual samples under
 [samples/](samples/) may also document their own wiring.)
 
-### GPIO assignments (library-owned)
+### PCB pin assignments
+The PCB connects to the Pico through a single **9-pin header** on the Pico's corner block (physical
+pins 32-40). It sits **directly alongside the Pico**, so both can be dropped onto a breadboard side
+by side - the PCB is designed to be especially convenient for breadboard use.
+
+| Header pin | Pico pin | Pico signal | Role on the PCB |
+|---|---|---|---|
+| 1 | 40 | VBUS     | USB 5 V (charger input) |
+| 2 | 39 | VSYS     | system supply, switched by the PCB (battery / USB) |
+| 3 | 38 | GND      | ground |
+| 4 | 37 | 3V3_EN   | on-board DC/DC enable (power latch) |
+| 5 | 36 | 3V3      | 3.3 V rail |
+| 6 | 35 | ADC_VREF | not connected |
+| 7 | 34 | GP28     | POWER_SW (power push switch input) |
+| 8 | 33 | AGND     | not connected |
+| 9 | 32 | GP27     | POWER_KEEP (DC/DC latch hold output) |
+
+Other connectors on the PCB: USB-C (charging / USB-plugged detection), a battery connector, and an
+external power push-switch header.
+
+If you need GP27 or GP28 for another purpose (they also serve as the ADC1 / ADC2 inputs) or simply
+prefer a different assignment, you do not have to mount the PCB side by side: wire the PCB's
+POWER_KEEP and POWER_SW to any other GPIOs instead and set `pin_power_keep` / `pin_power_sw` in
+`pbo_config_t` to match.
+
+### GPIO assignments for RP2 (from the library side)
 | Signal | GPIO (default) | Direction | Note |
 |--------|------|-----------|------|
 | pin_power_sw         | 28         | in (pull-up) | state transitions + dormant wake (falling edge) |
@@ -105,8 +130,8 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 
 | Member | Type | Default | Description |
 |---|---|---|---|
-| `pin_power_keep`    | `uint32_t`       | `27`            | Power-keep latch GPIO - see [GPIO assignments](#gpio-assignments-library-owned). |
-| `pin_power_sw`      | `uint32_t`       | `28`            | Power switch / dormant-wake GPIO - see [GPIO assignments](#gpio-assignments-library-owned). |
+| `pin_power_keep`    | `uint32_t`       | `27`            | Power-keep latch GPIO - see [GPIO assignments](#gpio-assignments-for-rp2). |
+| `pin_power_sw`      | `uint32_t`       | `28`            | Power switch / dormant-wake GPIO - see [GPIO assignments](#gpio-assignments-for-rp2). |
 | `pin_user_sw`       | `uint32_t`       | `PBO_PIN_UNUSED` | User switch GPIO; `PBO_PIN_UNUSED` (0) means not wired (so GPIO0 cannot be the user switch). |
 | `sleep_defer_ms`    | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredSleep` (0 = run immediately) - see [Deferred actions](#deferred-actions-pbo_deferred_reason_t). |
 | `shutdown_defer_ms` | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredShutdown` / `PboDeferredLowBattery` (0 = run immediately). |

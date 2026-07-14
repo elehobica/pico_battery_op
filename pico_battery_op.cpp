@@ -408,9 +408,9 @@ static void _begin_defer(pbo_deferred_reason_t reason, uint32_t defer_ms)
     }
 }
 
-// Enter dormant and resume running. Shared by the battery nap and the charging
-// dormant: the power-keep latch (held for nap, released for charge) is already
-// set by the current state's invariant, so this touches only the callbacks.
+// Enter DeepSleep and resume running. Shared by the Sleep and the charging DeepSleep:
+// the power-keep latch (held for Sleep, released for charge) is already set by the
+// current state's invariant, so this touches only the callbacks.
 static void _dormant_and_resume()
 {
     if (_cb.on_enter_dormant != nullptr) {
@@ -428,8 +428,8 @@ static void _run_deferred()
     pbo_deferred_reason_t reason = _deferred;
     _deferred = PboDeferredNone;
     switch (reason) {
-        case PboDeferredSleep:    // battery nap from PboStateActive (latch held)
-        case PboDeferredCharge:   // charging dormant from PboStateIdle (latch released)
+        case PboDeferredSleep:    // enter DeepSleep from PboStateActive (Sleep, latch held)
+        case PboDeferredCharge:   // enter DeepSleep from PboStateIdle (charge, latch released)
             _dormant_and_resume();
             break;
         case PboDeferredShutdown:

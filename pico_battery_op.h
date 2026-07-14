@@ -30,10 +30,10 @@ typedef enum {
 
 // Power state managed by the power management state machine (pbo_process()).
 //   PboStateIdle   : power-keep latch released. Boot boundary and shutdown target.
-//                   With USB it charges (dormant); without USB the hardware
+//                   With USB it charges (DeepSleep); without USB the hardware
 //                   powers off. Not a "running" state.
-//   PboStateActive : latch held, running. A battery nap is a dormant episode that
-//                   stays in PboStateActive; there is no separate "sleep" state.
+//   PboStateActive : latch held, running. A Sleep just puts the CPU into DeepSleep
+//                   while staying in PboStateActive; it is not a separate state.
 typedef enum _pbo_state_t {
     PboStateIdle = 0,
     PboStateActive
@@ -44,10 +44,10 @@ typedef enum _pbo_state_t {
 // pbo_cancel_deferred() before its deadline.
 typedef enum _pbo_deferred_reason_t {
     PboDeferredNone = 0,
-    PboDeferredSleep,        // PboStateActive -> dormant nap    (cancelable)
+    PboDeferredSleep,        // PboStateActive -> DeepSleep        (cancelable)
     PboDeferredShutdown,     // PboStateActive -> PboStateIdle     (cancelable)
     PboDeferredLowBattery,   // PboStateActive -> PboStateIdle     (NOT cancelable)
-    PboDeferredCharge        // PboStateIdle(USB) -> dormant      (NOT cancelable)
+    PboDeferredCharge        // PboStateIdle(USB) -> DeepSleep     (NOT cancelable)
 } pbo_deferred_reason_t;
 
 typedef struct _pbo_deferred_info_t {
@@ -64,8 +64,8 @@ typedef struct _pbo_deferred_info_t {
 // All members are optional (set to NULL to skip). They are called from
 // pbo_process() context (main-loop), never from an ISR.
 typedef struct _pbo_callbacks_t {
-    // A state transition occurred (PboStateIdle <-> PboStateActive). Note: a
-    // battery nap stays in PboStateActive, so it does NOT fire this callback.
+    // A state transition occurred (PboStateIdle <-> PboStateActive). Note: a Sleep
+    // keeps PboStateActive (only the CPU goes dormant), so it does NOT fire this callback.
     void (*on_state_changed)(pbo_state_t new_state, pbo_state_t prev_state);
     // A deferred action was scheduled (its delay began).
     void (*on_deferred)(pbo_deferred_reason_t reason);
@@ -73,10 +73,10 @@ typedef struct _pbo_callbacks_t {
     // (e.g. ButtonUserSingle). While a deferred action is pending, all button
     // events are forwarded here so the app can decide to pbo_cancel_deferred() it.
     void (*on_button_event)(button_action_t btn_act);
-    // Just before entering dormant (both nap and charging dormant); the app
-    // quiesces its peripherals (e.g. display_deinit(), peripheral power off).
+    // Just before entering DeepSleep (a Sleep or charging); the app quiesces its
+    // peripherals (e.g. display_deinit(), peripheral power off).
     void (*on_enter_dormant)();
-    // Just after waking from dormant. The state is already PboStateActive.
+    // Just after waking from DeepSleep. The state is already PboStateActive.
     void (*on_exit_dormant)();
 } pbo_callbacks_t;
 
@@ -88,9 +88,9 @@ typedef struct _pbo_config_t {
     uint32_t pin_power_sw;      // power switch / dormant wake pin (default 28)
     uint32_t pin_user_sw;       // user switch, PBO_PIN_UNUSED if not wired (default PBO_PIN_UNUSED)
     // Delays for deferred actions.
-    uint32_t sleep_defer_ms;    // before dormant nap
+    uint32_t sleep_defer_ms;    // before a Sleep (enter DeepSleep)
     uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
-    uint32_t charge_defer_ms;   // before dormant while charging
+    uint32_t charge_defer_ms;   // before charging (enter DeepSleep)
     // Battery ADC calibration (linear fit):
     //   battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b.
     // The ADC pin reads the battery through a 200k/100k divider (nominal ratio 3.0).
@@ -119,7 +119,7 @@ bool pbo_is_caused_reboot();
 void pbo_start();
 // Advance the power state machine. Call it periodically from the main loop
 // (timing uses absolute time, so the exact cadence is not critical). This may
-// block while dormant (battery nap, or charging in PboStateIdle).
+// block while dormant (DeepSleep, or charging in PboStateIdle).
 void pbo_process();
 // Current power state.
 pbo_state_t pbo_get_state();

@@ -80,7 +80,7 @@ condition is represented only at its boundary, as `PboStateIdle`.
 | State | power-keep | Meaning |
 |-------|-----------|---------|
 | `PboStateIdle`   | released | Boot boundary and shutdown target. With USB -> charging (dormant); without USB -> hardware powers off. Not a running state (CPU is dormant/off). |
-| `PboStateActive` | held     | Running. A battery nap is a dormant episode that stays in `PboStateActive` - there is no separate sleep state. |
+| `PboStateActive` | held     | Running. A Sleep just puts the CPU into DeepSleep while staying in `PboStateActive` - it is not a separate state. |
 
 ### Boot / power-on behavior
 By default, when USB is not connected, the board is in **Power OFF (Stand-by)** right after a reset
@@ -106,10 +106,10 @@ as the ssd1306 sample does) and are measured with absolute time (no fixed loop-c
 
 | Reason | Trigger | Run action | Cancelable |
 |---|---|---|---|
-| `PboDeferredSleep`      | power single push (in `Active`)  | dormant nap -> `Active` | yes |
+| `PboDeferredSleep`      | power single push (in `Active`)  | DeepSleep -> `Active` | yes |
 | `PboDeferredShutdown`   | power long push (in `Active`)    | release latch -> `Idle` | yes |
 | `PboDeferredLowBattery` | low battery (in `Active`)        | release latch -> `Idle` | no |
-| `PboDeferredCharge`     | entering `Idle` with USB present | dormant -> `Active` | no |
+| `PboDeferredCharge`     | entering `Idle` with USB present | DeepSleep -> `Active` | no |
 
 While a deferred action is pending, the library forwards button events to `on_button_event`, so the
 application can call `pbo_cancel_deferred()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
@@ -144,10 +144,10 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 ### Callbacks (`pbo_callbacks_t`, all optional)
 | Callback | When | Typical use |
 |---|---|---|
-| `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a nap stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
+| `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a Sleep stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
 | `on_deferred(reason)` | a deferred action was scheduled (delay began) | start rendering the announcement |
 | `on_button_event(btn)` | events not consumed as a power trigger (e.g. `ButtonUserSingle`), and all events while a deferred action is pending | product features / call `pbo_cancel_deferred()` |
-| `on_enter_dormant()` | just before dormant (nap or charging) | quiesce peripherals (display off, peripheral power off) |
+| `on_enter_dormant()` | just before entering DeepSleep (a Sleep or charging) | quiesce peripherals (display off, peripheral power off) |
 | `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
 
 All callbacks run in `pbo_process()` (main-loop) context - never in an ISR.

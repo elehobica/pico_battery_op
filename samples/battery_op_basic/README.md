@@ -21,17 +21,17 @@ power-keep latch on **GPIO27** (the user switch is unused). See the
 | State | LED |
 |-------|-----|
 | `PboStateActive`, fresh startup | blinks at 1 Hz (500 ms on / 500 ms off) |
-| `PboStateActive`, resumed from a Sleep nap | blinks at 2 Hz (250 ms on / 250 ms off) |
-| dormant (Sleep nap) | off |
+| `PboStateActive`, resumed from DeepSleep | blinks at 2 Hz (250 ms on / 250 ms off) |
+| DeepSleep | off |
 | any other state | off |
 
-The blink rate distinguishes a fresh startup (1 Hz) from a resume after a Sleep nap (2 Hz): the
-`on_exit_dormant` callback (fired just after waking) flips the rate to 2 Hz. A Sleep nap stays in
-`PboStateActive` while the CPU is dormant, so `on_enter_dormant` turns the LED off to keep it dark
-while sleeping, regardless of the blink phase.
+The blink rate distinguishes a fresh startup (1 Hz) from a resume after a Sleep (2 Hz): the
+`on_exit_dormant` callback (fired just after waking) flips the rate to 2 Hz. A Sleep keeps
+`PboStateActive` while the CPU is in DeepSleep, so `on_enter_dormant` turns the LED off to keep it
+dark while sleeping, regardless of the blink phase.
 
 The power switch drives the state machine exactly as the library defines (single push starts a
-`Sleep` announce then dormant, long push starts a `Shutdown`, low battery latches a shutdown).
+`Sleep` announce then DeepSleep, long push starts a `Shutdown`, low battery latches a shutdown).
 This sample does not render any of those announces; it only reflects the running state on the LED.
 
 When a reset is released with USB not connected the board restarts from OFF (Stand-by); press the
@@ -39,7 +39,7 @@ power switch to run it. See [Boot / power-on behavior](../../README.md#boot--pow
 
 ## How the application integrates with the library
 The sample takes the default config and drives `pbo_process()` each loop. Its callbacks manage the
-LED around the Sleep nap (see [main.c](main.c)):
+LED around DeepSleep (see [main.c](main.c)):
 
 ```c
 pbo_config_t config = pbo_get_default_config();
@@ -49,7 +49,7 @@ pbo_init(&config);
 pbo_start();
 while (true) {
     pbo_process();
-    // blink the LED while Active: 1 Hz on startup, 2 Hz after a Sleep nap
+    // blink the LED while Active: 1 Hz on startup, 2 Hz after a DeepSleep
     sleep_ms(50);
 }
 ```

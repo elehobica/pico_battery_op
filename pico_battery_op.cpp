@@ -473,7 +473,7 @@ pbo_config_t pbo_get_default_config()
         DEFAULT_DEFER_MS,              // sleep_defer_ms
         DEFAULT_DEFER_MS,              // shutdown_defer_ms
         DEFAULT_DEFER_MS,              // charge_defer_ms
-        PboActionShutdown,             // power_action_single
+        PboActionNone,                 // power_action_single
         PboActionSleep,                // power_action_double
         PboActionNone,                 // power_action_triple
         PboActionNone,                 // power_action_long

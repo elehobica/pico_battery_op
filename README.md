@@ -171,9 +171,30 @@ Each POWER-switch gesture is mapped to a power action via `power_action_*` (`pbo
 | `PboActionSleep` | enter DeepSleep (schedules `PboDeferredSleep`, honoring `sleep_defer_ms`) |
 | `PboActionShutdown` | shut down (schedules `PboDeferredShutdown`, honoring `shutdown_defer_ms`) |
 
-Defaults: single push -> Shutdown, double push -> Sleep, long-long push -> Shutdown, and the rest
-`PboActionNone`. Override only what you want to change, for example to make a single push enter
-DeepSleep instead of shutting down:
+Defaults:
+
+| POWER gesture | Power action | Effect while `Active` |
+|---|---|---|
+| single         | `PboActionNone`     | forwarded to `on_button_event` (no power effect) |
+| double         | `PboActionSleep`    | enter DeepSleep |
+| triple         | `PboActionNone`     | forwarded to `on_button_event` |
+| long (1 s)     | `PboActionNone`     | forwarded to `on_button_event` |
+| long-long (2 s)| `PboActionShutdown` | shut down |
+
+**Asymmetric ON / OFF.** Turning the board **ON** is a fixed behavior outside this mapping: a single
+POWER push while OFF (`Idle` / DeepSleep) always powers up / wakes. The mapping therefore only
+governs what happens while the board is already **ON**, which lets you assign ON and OFF (and Sleep)
+asymmetrically. With the defaults:
+
+- OFF + single push -> **ON** (fixed; power-up / wake)
+- ON + long-long push (2 s) -> **OFF** (Shutdown)
+- ON + double push -> **Sleep**
+- ON + single push -> **nothing** — free for the application to use for a non-power feature via `on_button_event`
+
+The deliberately heavier gesture for OFF (a 2 s hold) guards against an accidental single press
+powering the board down, while that same single press stays available to your app.
+
+Override only what you want to change, for example to make a single push enter DeepSleep:
 
 ```c
 config.power_action_single = PboActionSleep;

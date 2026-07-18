@@ -62,11 +62,6 @@ POWER_KEEP and POWER_SW to any other GPIOs instead and set `pin_power_keep` / `p
 | PIN_DCDC_PSM_CTRL    | 23 (fixed) | out          | DC/DC control PFM (efficiency) / PWM (ripple) mode select |
 | PIN_BATT_LVL         | 29 (fixed) | ADC3         | Battery level ADC input via 200k / 100k divider |
 
-The three switch / power-keep pins are configurable at runtime through `pbo_config_t`
-(see `pbo_get_default_config()`); the remaining pins are fixed as `static const` in
-[pico_battery_op.cpp](pico_battery_op.cpp). Peripheral 3.3 V power control is **not** part of
-the library; the application owns it (for example, a sample drives it on GPIO20, open-drain, active-low).
-
 ## Power state model
 
 **Stand-by (hardware)** - the RP2 DC/DC is off and the firmware is not running. The board is
@@ -99,6 +94,12 @@ So with no USB, a reset always restarts from **Power OFF** regardless of the sta
 press the Power ON switch to run again.
 
 ### Deferred actions (`pbo_deferred_reason_t`)
+The purpose of deferring is to give the application a time window before a Shutdown / Sleep / Charge
+transition actually happens - long enough to show the user that the transition is coming (an
+"announce" screen, LED pattern, etc.). Combined with cancellation it goes one step further: the
+application can announce the pending transition while letting the user decide whether to cancel it
+(otherwise the transition proceeds on its own).
+
 Every "wait, then perform a terminal power action" is modeled as a **deferred action**: scheduled
 now and **run automatically** after a delay, unless canceled. Delays come from `pbo_config_t`
 (default 0 ms, so the action runs on the next `pbo_process()`; set non-zero for an announce window,
@@ -145,6 +146,21 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 | `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
 | `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PboDeferredLowBattery`). |
 | `callbacks`         | `pbo_callbacks_t` | all `NULL`      | Application callbacks - see [Callbacks](#callbacks-pbo_callbacks_t-all-optional). |
+
+### Button gestures
+Both the POWER and USER switches report the same set of gestures (`ButtonPower*` / `ButtonUser*` in
+`button_action_t`). Recognition is edge-based on a 20 Hz sampler:
+
+| Gesture | Fires when |
+|---|---|
+| `Single`   | pressed briefly and released (a single click) |
+| `Double`   | pressed twice in quick succession, on the final release |
+| `Triple`   | pressed three times in quick succession, on the final release |
+| `Long`     | held for **~1 s** (does not also emit `Single` / `Double` / `Triple` in the same press) |
+| `LongLong` | held for **~2 s** (likewise no `Single` / `Double` / `Triple`; emitted after `Long` has already fired during the same continuous hold) |
+
+`Single` / `Double` / `Triple` fire on release (click counting), while `Long` / `LongLong` fire
+while the button is still held, at the moment their thresholds are reached.
 
 ### Power button mapping
 Each POWER-switch gesture is mapped to a power action via `power_action_*` (`pbo_power_action_t`):

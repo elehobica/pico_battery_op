@@ -90,8 +90,8 @@ static uint32_t _sleep_en1;
 
 // Configuration for button recognition
 static const uint32_t RELEASE_IGNORE_COUNT = 8;
-static const uint32_t LONG_PUSH_COUNT = 10;
-static const uint32_t LONG_LONG_PUSH_COUNT = 30;
+static const uint32_t LONG_PUSH_COUNT = 20;      // 20 ticks / 20 Hz = 1 s
+static const uint32_t LONG_LONG_PUSH_COUNT = 40; // 40 ticks / 20 Hz = 2 s
 
 static const uint32_t NUM_BTN_HISTORY = 30;
 static button_status_t button_prv[NUM_BTN_HISTORY] = {}; // initialized as HP_BUTTON_OPEN

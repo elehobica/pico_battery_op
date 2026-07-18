@@ -110,9 +110,9 @@ int main()
     // Start from defaults, then override only what this board needs.
     pbo_config_t config = pbo_get_default_config();
     config.pin_user_sw = 17; // this board wires the user switch to GPIO17
-    config.sleep_defer_ms = 3000;    // 3 s announce before a Sleep (DeepSleep)
+    config.sleep_defer_ms = 3000;    // 3 s announce before a Sleep (dormant)
     config.shutdown_defer_ms = 3000; // 3 s announce before shutdown / low battery
-    config.charge_defer_ms = 3000;   // 3 s announce before charging (DeepSleep)
+    config.charge_defer_ms = 3000;   // 3 s announce before charging (dormant)
     config.callbacks.on_button_event = on_button_event;
     config.callbacks.on_enter_dormant = on_enter_dormant;
     config.callbacks.on_exit_dormant = on_exit_dormant;

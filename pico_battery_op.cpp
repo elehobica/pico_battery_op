@@ -329,14 +329,14 @@ static void _clear_btn_evt()
 // === 'recover_from_sleep' part (start) ===================================
 // great reference from 'recover_from_sleep'
 // https://github.com/ghubcoder/PicoSleepDemo | https://ghubcoder.github.io/posts/awaking-the-pico/
-static void _preserve_clock_before_sleep()
+static void _preserve_clock_before_dormant()
 {
     _scr = scb_hw->scr;
     _sleep_en0 = clocks_hw->sleep_en0;
     _sleep_en1 = clocks_hw->sleep_en1;
 }
 
-static void _recover_clock_after_sleep()
+static void _recover_clock_after_dormant()
 {
     rosc_write(&rosc_hw->ctrl, ROSC_CTRL_ENABLE_BITS); //Re-enable ring Oscillator control
     scb_hw->scr = _scr;
@@ -355,17 +355,17 @@ static void _enter_dormant_and_wake()
 
     // === [2] goto dormant then wake up ===
     uint32_t ints = save_and_disable_interrupts(); // (+a)
-    _preserve_clock_before_sleep(); // (+b)
+    _preserve_clock_before_dormant(); // (+b)
     sleep_run_from_xosc();
     // go to dormant until the Power switch is pushed (fall edge detected)
     sleep_goto_dormant_until_pin(_cfg.pin_power_sw, true, false);
 
-    // ------------------
-    // --- Deep Sleep ---
-    // ------------------
+    // ---------------
+    // --- Dormant ---
+    // ---------------
 
     // wake up from here (Power switch push)
-    _recover_clock_after_sleep(); // (-b)
+    _recover_clock_after_dormant(); // (-b)
     restore_interrupts(ints); // (-a)
 
     // === [3] treatments after wake up ===
@@ -412,7 +412,7 @@ static void _begin_defer(pbo_deferred_reason_t reason, uint32_t defer_ms)
     }
 }
 
-// Enter DeepSleep and resume running. Shared by the Sleep and the charging DeepSleep:
+// Enter dormant mode and resume running. Shared by the Sleep and the charging dormant:
 // the power-keep latch (held for Sleep, released for charge) is already set by the
 // current state's invariant, so this touches only the callbacks.
 static void _dormant_and_resume()
@@ -432,8 +432,8 @@ static void _run_deferred()
     pbo_deferred_reason_t reason = _deferred;
     _deferred = PboDeferredNone;
     switch (reason) {
-        case PboDeferredSleep:    // enter DeepSleep from PboStateActive (Sleep, latch held)
-        case PboDeferredCharge:   // enter DeepSleep from PboStateIdle (charge, latch released)
+        case PboDeferredSleep:    // enter dormant from PboStateActive (Sleep, latch held)
+        case PboDeferredCharge:   // enter dormant from PboStateIdle (charge, latch released)
             _dormant_and_resume();
             break;
         case PboDeferredShutdown:

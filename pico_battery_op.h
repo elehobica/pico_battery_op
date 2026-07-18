@@ -13,6 +13,11 @@
 extern "C" {
 #endif
 
+// Terminology: "Sleep" is this library's low-power operation (a POWER double push,
+// or the automatic charge case); it runs on the RP2 "dormant" mode (the Pico SDK's
+// term, sleep_goto_dormant_until_pin()) and is unrelated to sleep_ms(), a busy-wait
+// delay. "dormant" always refers to that physical mode.
+
 // Button gesture events reported to the application via on_button_event().
 typedef enum {
     ButtonPowerSingle = 0,
@@ -30,10 +35,10 @@ typedef enum {
 
 // Power state managed by the power management state machine (pbo_process()).
 //   PboStateIdle   : power-keep latch released. Boot boundary and shutdown target.
-//                   With USB it charges (DeepSleep); without USB the hardware
+//                   With USB it charges (dormant); without USB the hardware
 //                   powers off. Not a "running" state.
-//   PboStateActive : latch held, running. A Sleep just puts the CPU into DeepSleep
-//                   while staying in PboStateActive; it is not a separate state.
+//   PboStateActive : latch held, running. A Sleep just puts the CPU into dormant
+//                   mode while staying in PboStateActive; it is not a separate state.
 typedef enum _pbo_state_t {
     PboStateIdle = 0,
     PboStateActive
@@ -44,10 +49,10 @@ typedef enum _pbo_state_t {
 // pbo_cancel_deferred() before its deadline.
 typedef enum _pbo_deferred_reason_t {
     PboDeferredNone = 0,
-    PboDeferredSleep,        // PboStateActive -> DeepSleep        (cancelable)
+    PboDeferredSleep,        // PboStateActive -> dormant          (cancelable)
     PboDeferredShutdown,     // PboStateActive -> PboStateIdle     (cancelable)
     PboDeferredLowBattery,   // PboStateActive -> PboStateIdle     (NOT cancelable)
-    PboDeferredCharge        // PboStateIdle(USB) -> DeepSleep     (NOT cancelable)
+    PboDeferredCharge        // PboStateIdle(USB) -> dormant       (NOT cancelable)
 } pbo_deferred_reason_t;
 
 typedef struct _pbo_deferred_info_t {
@@ -59,7 +64,7 @@ typedef struct _pbo_deferred_info_t {
 // Power action a POWER-switch gesture is mapped to (see pbo_config_t::power_action_*).
 typedef enum _pbo_power_action_t {
     PboActionNone = 0,   // not a power trigger; forward the gesture to on_button_event
-    PboActionSleep,      // enter DeepSleep (schedules PboDeferredSleep)
+    PboActionSleep,      // enter dormant  (schedules PboDeferredSleep)
     PboActionShutdown    // shut down       (schedules PboDeferredShutdown)
 } pbo_power_action_t;
 
@@ -81,10 +86,10 @@ typedef struct _pbo_callbacks_t {
     // While a deferred action is pending, all button events are forwarded here so the
     // app can decide to pbo_cancel_deferred() it.
     void (*on_button_event)(button_action_t btn_act);
-    // Just before entering DeepSleep (a Sleep or charging); the app quiesces its
+    // Just before entering dormant mode (a Sleep or charging); the app quiesces its
     // peripherals (e.g. display_deinit(), peripheral power off).
     void (*on_enter_dormant)();
-    // Just after waking from DeepSleep. The state is already PboStateActive.
+    // Just after waking from dormant mode. The state is already PboStateActive.
     void (*on_exit_dormant)();
 } pbo_callbacks_t;
 
@@ -96,13 +101,13 @@ typedef struct _pbo_config_t {
     uint32_t pin_power_sw;      // power switch / dormant wake pin (default 28)
     uint32_t pin_user_sw;       // user switch, PBO_PIN_UNUSED if not wired (default PBO_PIN_UNUSED)
     // Delays for deferred actions.
-    uint32_t sleep_defer_ms;    // before a Sleep (enter DeepSleep)
+    uint32_t sleep_defer_ms;    // before a Sleep (enter dormant)
     uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
-    uint32_t charge_defer_ms;   // before charging (enter DeepSleep)
+    uint32_t charge_defer_ms;   // before charging (enter dormant)
     // POWER-switch gesture -> power action mapping. PboActionNone forwards the
     // gesture to on_button_event instead of triggering a power action.
-    pbo_power_action_t power_action_single;    // default PboActionSleep
-    pbo_power_action_t power_action_double;    // default PboActionNone
+    pbo_power_action_t power_action_single;    // default PboActionNone
+    pbo_power_action_t power_action_double;    // default PboActionSleep
     pbo_power_action_t power_action_triple;    // default PboActionNone
     pbo_power_action_t power_action_long;      // default PboActionNone
     pbo_power_action_t power_action_longlong;  // default PboActionShutdown
@@ -134,7 +139,7 @@ bool pbo_is_caused_reboot();
 void pbo_start();
 // Advance the power state machine. Call it periodically from the main loop
 // (timing uses absolute time, so the exact cadence is not critical). This may
-// block while dormant (DeepSleep, or charging in PboStateIdle).
+// block while dormant (a Sleep, or charging in PboStateIdle).
 void pbo_process();
 // Current power state.
 pbo_state_t pbo_get_state();

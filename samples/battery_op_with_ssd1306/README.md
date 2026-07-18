@@ -30,8 +30,8 @@ This sample requires the mandatory external discrete power circuit assumed by th
 ### Peripheral power (application-owned)
 Peripheral 3.3 V power is controlled by the application on **GPIO20** (open-drain, active-low).
 The OLED runs under peripheral power. The application:
-* turns peripheral power **on** when entering `PboStateActive` (`on_state_changed`),
-* turns it **off** together with the display before the library goes dormant (`on_before_dormant`),
+* turns peripheral power **on** at startup and after waking from dormant (`on_exit_dormant`),
+* turns it **off** together with the display before the library goes dormant (`on_enter_dormant`),
 * toggles it on a user-switch single push.
 
 ## User interface / behavior
@@ -48,9 +48,9 @@ The OLED runs under peripheral power. The application:
 ### Buttons
 | Action | Effect |
 |--------|--------|
-| Power switch - single push | start the `Sleep` announce (`GO DORMANT`), then dormant |
-| Power switch - long push | start the `Shutdown` announce, then `Idle` (charge if USB, otherwise power off) |
-| Power switch - single push during a cancelable announce | cancel it (`pbo_cancel()`) |
+| Power switch - double push | start the `Sleep` announce (`GO DORMANT`), then dormant |
+| Power switch - long-long push | start the `Shutdown` announce, then `Idle` (charge if USB, otherwise power off) |
+| Power switch - single push during a cancelable announce | cancel it (`pbo_cancel_deferred()`) |
 | User switch - single push | toggle peripheral power (OLED) |
 | Low battery detected | start the `LOW BATTERY` announce (not cancelable), then `Idle` |
 
@@ -63,9 +63,9 @@ The sample registers three callbacks and drives `pbo_process()` each loop
 
 | Callback | Application action |
 |---|---|
-| `on_state_changed` | turn peripheral power **on** when entering `PboStateActive` |
-| `on_button_event` | user single push → toggle peripheral power; power single push (during a pending) → `pbo_cancel()` |
-| `on_before_dormant` | `display_deinit()` + peripheral power **off** before dormant |
+| `on_button_event` | user single push → toggle peripheral power (OLED); power single push → `pbo_cancel_deferred()` (abort a pending cancelable announce) |
+| `on_enter_dormant` | `display_deinit()` + peripheral power **off** before dormant |
+| `on_exit_dormant` | peripheral power **on** after waking |
 
 ```c
 peripheral_power_init();

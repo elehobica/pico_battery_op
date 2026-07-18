@@ -64,6 +64,12 @@ POWER_KEEP and POWER_SW to any other GPIOs instead and set `pin_power_keep` / `p
 
 ## Power state model
 
+> **Terminology.** *Sleep* is this library's low-power operation (a POWER double push, or the
+> automatic charge case): the CPU stops but the DC/DC latch may stay held, and it wakes back to
+> `PboStateActive`. It runs on the RP2 **dormant** mode - the Pico SDK's term
+> (`sleep_goto_dormant_until_pin()`) - and is unrelated to `sleep_ms()`, an ordinary busy-wait delay.
+> Throughout this document, *dormant* always means that physical low-power mode.
+
 **Stand-by (hardware)** - the RP2 DC/DC is off and the firmware is not running. The board is
 powered on by the external H/W circuit (power-switch long push, or USB plug). In firmware this
 condition is represented only at its boundary, as `PboStateIdle`.
@@ -75,18 +81,18 @@ condition is represented only at its boundary, as `PboStateIdle`.
 | State | power-keep | Meaning |
 |-------|-----------|---------|
 | `PboStateIdle`   | released | Boot boundary and shutdown target. With USB -> charging (dormant); without USB -> hardware powers off. Not a running state (CPU is dormant/off). |
-| `PboStateActive` | held     | Running. A Sleep just puts the CPU into DeepSleep while staying in `PboStateActive` - it is not a separate state. |
+| `PboStateActive` | held     | Running. A Sleep just puts the CPU into dormant mode while staying in `PboStateActive` - it is not a separate state. |
 
 ### Boot / power-on behavior
 By default, when USB is not connected, the board is in **Power OFF (Stand-by)** right after a reset
 is released; turn it on with the **Power ON switch** (which sets the DC/DC latch in hardware). When
-**USB is connected**, the board powers up and enters DeepSleep (charge dormant); power is still
+**USB is connected**, the board powers up and enters dormant mode (charging); power is still
 supplied over USB in this state, so a firmware update (flashing over USB) is possible. The firmware
 decides the boot state as follows:
 
 | Condition | Result |
 |---|---|
-| USB present | powered up, then DeepSleep (charge dormant); USB keeps it powered. |
+| USB present | powered up, then dormant (charging); USB keeps it powered. |
 | No USB, Power ON switch held (a real power-on) | come up running. |
 | No USB, switch not held (e.g. a warm RUN reset) | Power OFF (hardware Stand-by). |
 
@@ -107,10 +113,10 @@ as the ssd1306 sample does) and are measured with absolute time (no fixed loop-c
 
 | Reason | Trigger | Run action | Cancelable |
 |---|---|---|---|
-| `PboDeferredSleep`      | POWER gesture mapped to Sleep, default double push (in `Active`)          | DeepSleep -> `Active` | yes |
+| `PboDeferredSleep`      | POWER gesture mapped to Sleep, default double push (in `Active`)          | dormant -> `Active` | yes |
 | `PboDeferredShutdown`   | POWER gesture mapped to Shutdown, default single / long-long (in `Active`) | release latch -> `Idle` | yes |
 | `PboDeferredLowBattery` | low battery (in `Active`)        | release latch -> `Idle` | no |
-| `PboDeferredCharge`     | entering `Idle` with USB present | DeepSleep -> `Active` | no |
+| `PboDeferredCharge`     | entering `Idle` with USB present | dormant -> `Active` | no |
 
 While a deferred action is pending, the library forwards button events to `on_button_event`, so the
 application can call `pbo_cancel_deferred()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
@@ -168,7 +174,7 @@ Each POWER-switch gesture is mapped to a power action via `power_action_*` (`pbo
 | Action | Effect |
 |---|---|
 | `PboActionNone` | not a power trigger; the gesture is forwarded to `on_button_event` for the app to handle |
-| `PboActionSleep` | enter DeepSleep (schedules `PboDeferredSleep`, honoring `sleep_defer_ms`) |
+| `PboActionSleep` | enter dormant mode (schedules `PboDeferredSleep`, honoring `sleep_defer_ms`) |
 | `PboActionShutdown` | shut down (schedules `PboDeferredShutdown`, honoring `shutdown_defer_ms`) |
 
 Defaults:
@@ -176,13 +182,13 @@ Defaults:
 | POWER gesture | Power action | Effect while `Active` |
 |---|---|---|
 | single         | `PboActionNone`     | forwarded to `on_button_event` (no power effect) |
-| double         | `PboActionSleep`    | enter DeepSleep |
+| double         | `PboActionSleep`    | enter dormant mode |
 | triple         | `PboActionNone`     | forwarded to `on_button_event` |
 | long (1 s)     | `PboActionNone`     | forwarded to `on_button_event` |
 | long-long (2 s)| `PboActionShutdown` | shut down |
 
 **Asymmetric ON / OFF.** Turning the board **ON** is a fixed behavior outside this mapping: a single
-POWER push while OFF (`Idle` / DeepSleep) always powers up / wakes. The mapping therefore only
+POWER push while OFF (`Idle` / dormant) always powers up / wakes. The mapping therefore only
 governs what happens while the board is already **ON**, which lets you assign ON and OFF (and Sleep)
 asymmetrically. With the defaults:
 
@@ -194,7 +200,7 @@ asymmetrically. With the defaults:
 The deliberately heavier gesture for OFF (a 2 s hold) guards against an accidental single press
 powering the board down, while that same single press stays available to your app.
 
-Override only what you want to change, for example to make a single push enter DeepSleep:
+Override only what you want to change, for example to make a single push enter dormant mode:
 
 ```c
 config.power_action_single = PboActionSleep;
@@ -206,7 +212,7 @@ config.power_action_single = PboActionSleep;
 | `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a Sleep stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
 | `on_deferred(reason)` | a deferred action was scheduled (delay began) | start rendering the announcement |
 | `on_button_event(btn)` | gestures not mapped to a power action (user gestures, and POWER gestures set to `PboActionNone`), and all events while a deferred action is pending | product features / call `pbo_cancel_deferred()` |
-| `on_enter_dormant()` | just before entering DeepSleep (a Sleep or charging) | quiesce peripherals (display off, peripheral power off) |
+| `on_enter_dormant()` | just before entering dormant mode (a Sleep or charging) | quiesce peripherals (display off, peripheral power off) |
 | `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
 
 All callbacks run in `pbo_process()` (main-loop) context - never in an ISR.

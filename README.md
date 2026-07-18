@@ -1,5 +1,7 @@
 # pico_battery_op - Power Management Library for Raspberry Pi Pico / Pico 2
 
+![Scene1](doc/pico_battery_op_scene.jpg)
+
 [![Build](https://github.com/elehobica/pico_battery_op/actions/workflows/build-binaries.yml/badge.svg)](https://github.com/elehobica/pico_battery_op/actions/workflows/build-binaries.yml)
 
 ## Overview

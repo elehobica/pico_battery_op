@@ -56,6 +56,13 @@ typedef struct _pbo_deferred_info_t {
     bool               cancelable;
 } pbo_deferred_info_t;
 
+// Power action a POWER-switch gesture is mapped to (see pbo_config_t::power_action_*).
+typedef enum _pbo_power_action_t {
+    PboActionNone = 0,   // not a power trigger; forward the gesture to on_button_event
+    PboActionSleep,      // enter DeepSleep (schedules PboDeferredSleep)
+    PboActionShutdown    // shut down       (schedules PboDeferredShutdown)
+} pbo_power_action_t;
+
 // Sentinel for pbo_config_t::pin_user_sw meaning "no user switch wired".
 // (GPIO0 therefore cannot be used as the user switch.)
 #define PBO_PIN_UNUSED 0u
@@ -69,9 +76,10 @@ typedef struct _pbo_callbacks_t {
     void (*on_state_changed)(pbo_state_t new_state, pbo_state_t prev_state);
     // A deferred action was scheduled (its delay began).
     void (*on_deferred)(pbo_deferred_reason_t reason);
-    // Button events not consumed by the state machine as a power trigger
-    // (e.g. ButtonUserSingle). While a deferred action is pending, all button
-    // events are forwarded here so the app can decide to pbo_cancel_deferred() it.
+    // Button events not consumed by the state machine as a power trigger: every user
+    // gesture, plus any POWER gesture mapped to PboActionNone (see power_action_*).
+    // While a deferred action is pending, all button events are forwarded here so the
+    // app can decide to pbo_cancel_deferred() it.
     void (*on_button_event)(button_action_t btn_act);
     // Just before entering DeepSleep (a Sleep or charging); the app quiesces its
     // peripherals (e.g. display_deinit(), peripheral power off).
@@ -91,6 +99,13 @@ typedef struct _pbo_config_t {
     uint32_t sleep_defer_ms;    // before a Sleep (enter DeepSleep)
     uint32_t shutdown_defer_ms; // before releasing latch (shutdown / low battery)
     uint32_t charge_defer_ms;   // before charging (enter DeepSleep)
+    // POWER-switch gesture -> power action mapping. PboActionNone forwards the
+    // gesture to on_button_event instead of triggering a power action.
+    pbo_power_action_t power_action_single;    // default PboActionSleep
+    pbo_power_action_t power_action_double;    // default PboActionNone
+    pbo_power_action_t power_action_triple;    // default PboActionNone
+    pbo_power_action_t power_action_long;      // default PboActionNone
+    pbo_power_action_t power_action_longlong;  // default PboActionShutdown
     // Battery ADC calibration (linear fit):
     //   battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b.
     // The ADC pin reads the battery through a 200k/100k divider (nominal ratio 3.0).

@@ -106,8 +106,8 @@ as the ssd1306 sample does) and are measured with absolute time (no fixed loop-c
 
 | Reason | Trigger | Run action | Cancelable |
 |---|---|---|---|
-| `PboDeferredSleep`      | power single push (in `Active`)  | DeepSleep -> `Active` | yes |
-| `PboDeferredShutdown`   | power long push (in `Active`)    | release latch -> `Idle` | yes |
+| `PboDeferredSleep`      | POWER gesture mapped to Sleep, default double push (in `Active`)          | DeepSleep -> `Active` | yes |
+| `PboDeferredShutdown`   | POWER gesture mapped to Shutdown, default single / long-long (in `Active`) | release latch -> `Idle` | yes |
 | `PboDeferredLowBattery` | low battery (in `Active`)        | release latch -> `Idle` | no |
 | `PboDeferredCharge`     | entering `Idle` with USB present | DeepSleep -> `Active` | no |
 
@@ -136,17 +136,39 @@ then pass it to `pbo_init()` (passing `NULL` uses all defaults).
 | `sleep_defer_ms`    | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredSleep` (0 = run immediately) - see [Deferred actions](#deferred-actions-pbo_deferred_reason_t). |
 | `shutdown_defer_ms` | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredShutdown` / `PboDeferredLowBattery` (0 = run immediately). |
 | `charge_defer_ms`   | `uint32_t`       | `0`             | Delay in milliseconds for `PboDeferredCharge` (0 = run immediately). |
+| `power_action_single`   | `pbo_power_action_t` | `PboActionShutdown` | Action for a POWER single push - see [Power button mapping](#power-button-mapping). |
+| `power_action_double`   | `pbo_power_action_t` | `PboActionSleep`    | Action for a POWER double push. |
+| `power_action_triple`   | `pbo_power_action_t` | `PboActionNone`     | Action for a POWER triple push. |
+| `power_action_long`     | `pbo_power_action_t` | `PboActionNone`     | Action for a POWER long push. |
+| `power_action_longlong` | `pbo_power_action_t` | `PboActionShutdown` | Action for a POWER long-long push. |
 | `batt_calib_coef_a` | `float`          | `2.9917`        | Battery ADC calibration scale in the linear fit `battery_voltage[V] = adc_pin_voltage * batt_calib_coef_a + batt_calib_coef_b`. Ideally the divider ratio (200k/100k -> 3.0), trimmed by measurement. |
 | `batt_calib_coef_b` | `float`          | `-0.020`        | Battery ADC calibration offset [V] added after scaling, compensating divider/ADC bias (see `batt_calib_coef_a`). |
 | `low_battery_threshold` | `float`      | `2.9`           | Battery voltage [V] below which the low-battery flag latches (triggers `PboDeferredLowBattery`). |
 | `callbacks`         | `pbo_callbacks_t` | all `NULL`      | Application callbacks - see [Callbacks](#callbacks-pbo_callbacks_t-all-optional). |
+
+### Power button mapping
+Each POWER-switch gesture is mapped to a power action via `power_action_*` (`pbo_power_action_t`):
+
+| Action | Effect |
+|---|---|
+| `PboActionNone` | not a power trigger; the gesture is forwarded to `on_button_event` for the app to handle |
+| `PboActionSleep` | enter DeepSleep (schedules `PboDeferredSleep`, honoring `sleep_defer_ms`) |
+| `PboActionShutdown` | shut down (schedules `PboDeferredShutdown`, honoring `shutdown_defer_ms`) |
+
+Defaults: single push -> Shutdown, double push -> Sleep, long-long push -> Shutdown, and the rest
+`PboActionNone`. Override only what you want to change, for example to make a single push enter
+DeepSleep instead of shutting down:
+
+```c
+config.power_action_single = PboActionSleep;
+```
 
 ### Callbacks (`pbo_callbacks_t`, all optional)
 | Callback | When | Typical use |
 |---|---|---|
 | `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a Sleep stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
 | `on_deferred(reason)` | a deferred action was scheduled (delay began) | start rendering the announcement |
-| `on_button_event(btn)` | events not consumed as a power trigger (e.g. `ButtonUserSingle`), and all events while a deferred action is pending | product features / call `pbo_cancel_deferred()` |
+| `on_button_event(btn)` | gestures not mapped to a power action (user gestures, and POWER gestures set to `PboActionNone`), and all events while a deferred action is pending | product features / call `pbo_cancel_deferred()` |
 | `on_enter_dormant()` | just before entering DeepSleep (a Sleep or charging) | quiesce peripherals (display off, peripheral power off) |
 | `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
 

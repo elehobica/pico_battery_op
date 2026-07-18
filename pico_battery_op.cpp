@@ -96,12 +96,9 @@ static const int QueueLength = 1;
 
 // Power state machine
 static const uint32_t DEFAULT_DEFER_MS = 0; // no delay by default (deferred actions run on the next pbo_process())
-static pbo_config_t _cfg = {
-    DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
-    DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
-    DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
-    {} // callbacks
-};
+// Active configuration (overwritten by pbo_init()). Defaults live in a single place,
+// pbo_get_default_config(), so there is only one place to maintain them.
+static pbo_config_t _cfg = pbo_get_default_config();
 static pbo_callbacks_t _cb = {};
 static pbo_state_t _state = PboStateIdle;
 static pbo_state_t _state_prev = PboStateIdle;
@@ -442,6 +439,20 @@ static void _run_deferred()
     }
 }
 
+// Map a POWER-switch gesture to its configured power action (see pbo_config_t).
+// User gestures (and anything else) return PboActionNone, i.e. forward to the app.
+static pbo_power_action_t _power_action_for(button_action_t btn_act)
+{
+    switch (btn_act) {
+        case ButtonPowerSingle:   return _cfg.power_action_single;
+        case ButtonPowerDouble:   return _cfg.power_action_double;
+        case ButtonPowerTriple:   return _cfg.power_action_triple;
+        case ButtonPowerLong:     return _cfg.power_action_long;
+        case ButtonPowerLongLong: return _cfg.power_action_longlong;
+        default:                  return PboActionNone;
+    }
+}
+
 // =========================================================================
 // Public functions (declaration order follows pico_battery_op.h)
 // =========================================================================
@@ -449,10 +460,21 @@ static void _run_deferred()
 pbo_config_t pbo_get_default_config()
 {
     pbo_config_t cfg = {
-        DEFAULT_PIN_POWER_KEEP, DEFAULT_PIN_POWER_SW, DEFAULT_PIN_USER_SW,
-        DEFAULT_DEFER_MS, DEFAULT_DEFER_MS, DEFAULT_DEFER_MS,
-        DEFAULT_BATT_CALIB_COEF_A, DEFAULT_BATT_CALIB_COEF_B, DEFAULT_LOW_BATTERY_THRESHOLD,
-        {} // callbacks
+        DEFAULT_PIN_POWER_KEEP,        // pin_power_keep
+        DEFAULT_PIN_POWER_SW,          // pin_power_sw
+        DEFAULT_PIN_USER_SW,           // pin_user_sw
+        DEFAULT_DEFER_MS,              // sleep_defer_ms
+        DEFAULT_DEFER_MS,              // shutdown_defer_ms
+        DEFAULT_DEFER_MS,              // charge_defer_ms
+        PboActionShutdown,             // power_action_single
+        PboActionSleep,                // power_action_double
+        PboActionNone,                 // power_action_triple
+        PboActionNone,                 // power_action_long
+        PboActionShutdown,             // power_action_longlong
+        DEFAULT_BATT_CALIB_COEF_A,     // batt_calib_coef_a
+        DEFAULT_BATT_CALIB_COEF_B,     // batt_calib_coef_b
+        DEFAULT_LOW_BATTERY_THRESHOLD, // low_battery_threshold
+        {}                             // callbacks
     };
     return cfg;
 }
@@ -581,15 +603,16 @@ void pbo_process()
             }
             button_action_t btn_act;
             if (_get_btn_evt(&btn_act)) {
-                switch (btn_act) {
-                    case ButtonPowerSingle:
+                switch (_power_action_for(btn_act)) {
+                    case PboActionSleep:
                         _begin_defer(PboDeferredSleep, _cfg.sleep_defer_ms);
                         break;
-                    case ButtonPowerLongLong:
+                    case PboActionShutdown:
                         _begin_defer(PboDeferredShutdown, _cfg.shutdown_defer_ms);
                         break;
+                    case PboActionNone:
                     default:
-                        // forward events not consumed as a power trigger
+                        // forward gestures not mapped to a power action
                         if (_cb.on_button_event != nullptr) {
                             _cb.on_button_event(btn_act);
                         }

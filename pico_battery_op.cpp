@@ -7,8 +7,6 @@
 
 #include "pico_battery_op.h"
 
-//#include <cstdio>
-
 #include "hardware/adc.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
@@ -24,6 +22,15 @@
 #include "pico/stdio_uart.h"
 #include "pico/stdio_usb.h"
 #include "pico/util/queue.h"
+
+// Debug print. Enabled only when PBO_DPRINT is defined (e.g. -DPBO_DPRINT at build
+// time); otherwise it compiles to nothing (the default: no code, no output).
+#ifdef PBO_DPRINT
+#include <cstdio>
+#define pbo_dprintf(...) printf(__VA_ARGS__)
+#else
+#define pbo_dprintf(...) ((void)0)
+#endif
 
 // === Internal types (not exposed to the application) ===
 // Raw switch status used by the button-gesture classifier.
@@ -129,7 +136,7 @@ static void _monitor_battery_voltage()
     adc_select_input(ADC_PIN_BATT_LVL);
     float adc_voltage = (float) adc_read() * ADC_REF_VOLTAGE / ((1 << ADC_RESOLUTION) - 1); // [V]
     _bat_volt = adc_voltage * _cfg.batt_calib_coef_a + _cfg.batt_calib_coef_b; // [V]
-    //printf("Battery Voltage = %f (V)\n", _bat_volt);
+    pbo_dprintf("Battery Voltage = %f (V)\n", _bat_volt);
 }
 
 static bool _get_low_battery()
@@ -184,9 +191,9 @@ static void _trigger_event(button_action_t button_action)
         .button_action = button_action
     };
     if (!queue_try_add(&btn_evt_queue, &element)) {
-        //printf("FIFO was full\n");
+        pbo_dprintf("FIFO was full\n");
     }
-    //printf("trigger_event: %d\n", static_cast<int>(button_action));
+    pbo_dprintf("trigger_event: %d\n", static_cast<int>(button_action));
     return;
 }
 
@@ -287,7 +294,7 @@ static int _timer_init_battery_check()
 {
     // negative timeout means exact delay (rather than delay between callbacks)
     if (!add_repeating_timer_us(-1000000 / TIMER_ADC_HZ, _timer_callback_adc, nullptr, &timer)) {
-        //printf("Failed to add timer\n");
+        pbo_dprintf("Failed to add timer\n");
         return 0;
     }
     return 1;

@@ -12,7 +12,7 @@ jobs:
   build-binaries:
     strategy:
       matrix:
-        project: [battery_op_with_ssd1306]
+        project: [battery_op_basic, battery_op_with_ssd1306]
         build: [build, build2]
         include:
           - build: build

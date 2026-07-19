@@ -252,7 +252,7 @@ while (true) {
 See the example projects under [samples/](samples/) for complete examples.
 
 ## How to build with docker image
-* Builds the firmware inside [pico-sdk-dev-docker:sdk-2.1.1-1.0.0](https://hub.docker.com/r/elehobica/pico-sdk-dev-docker) (same image used by CI). Requires Docker; no local Pico SDK setup is needed.
+* Builds the firmware inside [pico-sdk-dev-docker:sdk-2.2.0](https://hub.docker.com/r/elehobica/pico-sdk-dev-docker) (same image used by CI). Requires Docker; no local Pico SDK setup is needed.
 * `samples/build_docker.sh` drives the container build. The sample to build is taken from the current directory, so run it from inside the sample folder you want to build (`samples/xxxx`).
 ```
 $ git clone -b main https://github.com/elehobica/pico_battery_op.git
@@ -268,15 +268,15 @@ $ ../build_docker.sh pico2     # build only Pico 2 / Pico 2 W  -> build2/xxxx.uf
 * See ["Getting started with Raspberry Pi Pico"](https://datasheets.raspberrypi.org/pico/getting-started-with-pico.pdf)
 * Put "pico-sdk", "pico-examples" and "pico-extras" on the same level with this project folder.
 * Set environmental variables for PICO_SDK_PATH, PICO_EXTRAS_PATH and PICO_EXAMPLES_PATH
-* Confirmed with Pico SDK 2.1.1
+* Confirmed with Pico SDK 2.2.0
 ```
-> git clone -b 2.1.1 https://github.com/raspberrypi/pico-sdk.git
+> git clone -b 2.2.0 https://github.com/raspberrypi/pico-sdk.git
 > cd pico-sdk
 > git submodule update -i
 > cd ..
-> git clone -b sdk-2.1.1 https://github.com/raspberrypi/pico-examples.git
+> git clone -b sdk-2.2.0 https://github.com/raspberrypi/pico-examples.git
 >
-> git clone -b sdk-2.1.1 https://github.com/raspberrypi/pico-extras.git
+> git clone -b sdk-2.2.0 https://github.com/raspberrypi/pico-extras.git
 > 
 > git clone -b main https://github.com/elehobica/pico_battery_op.git
 ```
@@ -293,7 +293,7 @@ $ ../build_docker.sh pico2     # build only Pico 2 / Pico 2 W  -> build2/xxxx.uf
 ```
 * Put "*.uf2" on RPI-RP2 or RP2350 drive
 ### Linux
-* Build is confirmed with [pico-sdk-dev-docker:sdk-2.1.1-1.0.0]( https://hub.docker.com/r/elehobica/pico-sdk-dev-docker)
+* Build is confirmed with [pico-sdk-dev-docker:sdk-2.2.0]( https://hub.docker.com/r/elehobica/pico-sdk-dev-docker)
 * Confirmed with cmake-3.22.1 and arm-none-eabi-gcc (15:10.3-2021.07-4) 10.3.1
 ```
 $ cd pico_battery_op/samples/xxxx

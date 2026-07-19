@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 * Move PIN_POWER_SW from GP21 to GP28
 * Set internal pullup on PIN_POWER_SW
 * Move PIN_POWER_KEEP from GP19 to GP27
-* Support pico-sdk 2.2.0
+* Support pico-sdk 2.3.0
 
 ## [1.0.1] - 2025-03-10
 ### Added

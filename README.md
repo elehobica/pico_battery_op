@@ -214,8 +214,8 @@ config.power_action_single = PboActionSleep;
 | `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a Sleep stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
 | `on_deferred(reason)` | a deferred action was scheduled (delay began) | start rendering the announcement |
 | `on_button_event(btn)` | gestures not mapped to a power action (user gestures, and POWER gestures set to `PboActionNone`), and all events while a deferred action is pending | product features / call `pbo_cancel_deferred()` |
-| `on_enter_dormant()` | just before entering dormant mode (a Sleep or charging) | quiesce peripherals (display off, peripheral power off) |
-| `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on) |
+| `on_enter_dormant()` | just before entering dormant mode (a Sleep or charging) | quiesce peripherals (display off, peripheral power off); optionally call `pbo_dormant_set_low_leakage()` - see [Low-power tuning](#low-power-dormant-tuning) |
+| `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on); re-init any pins released by a low-leakage sweep |
 
 All callbacks run in `pbo_process()` (main-loop) context - never in an ISR.
 
@@ -229,6 +229,47 @@ All callbacks run in `pbo_process()` (main-loop) context - never in an ISR.
 | `float pbo_get_battery_voltage()` | Get battery voltage in volts. |
 | `bool pbo_get_usb_power_detected()` | Get USB power detected. |
 | `void pbo_reboot()` / `bool pbo_is_caused_reboot()` | Watchdog reboot helpers. |
+
+### Low-power (dormant) tuning
+While dormant, every GPIO keeps its pad configuration and any pull fighting an external level or
+floating enabled input keeps leaking current. To minimize that leakage, call
+`pbo_dormant_set_low_leakage()` from `on_enter_dormant()`:
+
+| Function | Description |
+|---|---|
+| `uint32_t pbo_get_dormant_reserved_pin_mask()` | Bitmask (bit i = GPIO i) of the GPIOs the library must keep alive across dormant (wake pin, power-keep latch, and the other library-owned pins). Building block for a safe exclude mask. |
+| `void pbo_dormant_set_low_leakage(uint32_t app_hold_mask)` | Put every GPIO that is neither reserved by the library nor listed in `app_hold_mask` into the lowest-leakage state (pulls off, input buffer off, output driver off). Pass in `app_hold_mask` any application pin that must keep driving its level through dormant. |
+
+The library never touches its own pins, so an application only needs to manage its own. The sweep is
+**destructive and does not save pad state**: re-initialize any pin you let go (not in `app_hold_mask`)
+after wake, in `on_exit_dormant()`. Requires the `pico_low_power` library (Pico SDK 2.3.0+), which the
+`INTERFACE` target links transitively - no extra linkage in your app.
+
+```c
+// Pins your application drives (examples).
+#define MY_LED_PIN    16u   // an output you can let go while dormant
+#define MY_HOLD_PIN   18u   // an output that must keep its level while dormant
+
+static void on_enter_dormant() {
+    // ... quiesce your peripherals here (displays, sensors, peripheral power, ...) ...
+
+    // Keep MY_HOLD_PIN driving through dormant; sweep every other non-reserved pin to the
+    // lowest-leakage state. Pass 0 if nothing needs to keep its level.
+    pbo_dormant_set_low_leakage(1u << MY_HOLD_PIN);
+}
+
+static void on_exit_dormant() {
+    // Re-initialize the pins the sweep released (everything you use again that was not in
+    // app_hold_mask). gpio_init() clears the low-leakage overrides; then re-apply each pin's
+    // direction / function / pulls. The library's own pins are untouched, so skip them.
+    gpio_init(MY_LED_PIN);
+    gpio_set_dir(MY_LED_PIN, GPIO_OUT);
+    // ... re-init other released pins, then restore your peripherals ...
+}
+```
+
+For a concrete, board-specific version of this, see
+[`samples/battery_op_with_ssd1306/main.cpp`](samples/battery_op_with_ssd1306/main.cpp).
 
 ## Using the library in your own project
 The library is an `INTERFACE` CMake target. From a sample/app `CMakeLists.txt`:

@@ -133,6 +133,21 @@ bool pbo_get_usb_power_detected();
 void pbo_reboot();
 bool pbo_is_caused_reboot();
 
+// === Low-power (dormant) tuning ===
+// Bitmask (bit i = GPIO i) of the GPIOs the library must keep alive across dormant: the
+// wake pin (pin_power_sw), the DC/DC power-keep latch (pin_power_keep), and the other
+// library-owned pins. Use it to build a safe exclude mask when the application lowers pin
+// leakage for dormant, so it never disturbs the library's own pins.
+uint32_t pbo_get_dormant_reserved_pin_mask(void);
+// Put every GPIO that is neither reserved by the library (see above) nor listed in
+// app_hold_mask into the lowest-leakage state (pulls off, input buffer off, output driver
+// off) to minimize current while dormant. Call it just before entering dormant, typically
+// from the on_enter_dormant() callback. Pass in app_hold_mask any application pin that must
+// keep driving its level through dormant. This is destructive and does NOT save pad state:
+// the application must re-initialize the pins it let go (not in app_hold_mask) after wake,
+// typically in on_exit_dormant(). Requires the pico_low_power library (Pico SDK 2.3.0+).
+void pbo_dormant_set_low_leakage(uint32_t app_hold_mask);
+
 // === Power state machine ===
 // Start the state machine: select the initial state from USB-plugged detection.
 // Call once after pbo_init() (which already took the config and callbacks).

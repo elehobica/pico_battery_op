@@ -91,11 +91,22 @@ static void on_enter_dormant()
         set_peripheral_power(false);
     }
     peri_power_prev = false; // force display re-init after wake via the edge below
+
+    // Minimize dormant current: put every GPIO except the library's reserved pins into the
+    // lowest-leakage state. This board holds no output through dormant, so app_hold_mask is
+    // 0; any pin that had to keep driving its level would go into that mask instead. The
+    // application pins let go here (LED, peripheral-power, I2C) are re-initialized after wake
+    // in on_exit_dormant().
+    pbo_dormant_set_low_leakage(0);
 }
 
-// Restore peripheral power after waking (display re-init happens via the edge).
+// Restore the application pins the low-leakage sweep let go, then re-enable peripheral power
+// after waking (display re-init happens on the peripheral-power edge in the main loop).
 static void on_exit_dormant()
 {
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    peripheral_power_init();      // re-init the peripheral-power-enable pad (clears the sweep)
     set_peripheral_power(true);
 }
 

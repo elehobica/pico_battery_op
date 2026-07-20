@@ -20,6 +20,8 @@ static const uint32_t PIN_SSD1306_POWER = 14;
 
 static ssd1306_t disp;
 
+static uint32_t wakeup_count = 0;
+
 static inline uint32_t _millis(void)
 {
 	return to_ms_since_boot(get_absolute_time());
@@ -89,6 +91,7 @@ static void on_enter_dormant()
 // re-initialize the display after waking.
 static void on_exit_dormant()
 {
+    wakeup_count++;
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     display_power_init();      // re-init the display-power pad (clears the sweep)
@@ -149,6 +152,8 @@ int main()
                 sprintf(str, "Battery: %4.2f V", battery_voltage);
             }
             ssd1306_draw_string(&disp, 8*0, 8*3, 1, str);
+            sprintf(str, "Wakeup: %lu", wakeup_count);
+            ssd1306_draw_string(&disp, 8*0, 8*5, 1, str);
             // Announce the pending deferred power action.
             if (has_deferred && blink) {
                 const char* msg = nullptr;
@@ -166,14 +171,16 @@ int main()
             uint32_t hour = millis / (1000 * 60 * 60);
             uint32_t min = (millis / (1000 * 60)) % 60;
             uint32_t sec = (millis / 1000) % 60;
-            sprintf(str, "%d:%02d:%02d", hour, min, sec);
-            ssd1306_draw_string(&disp, 8*6, 8*7, 1, str);
+            sprintf(str, "%2d:%02d:%02d", hour, min, sec);
+            ssd1306_draw_string(&disp, 8*4, 8*7, 1, str);
         }
         ssd1306_show(&disp);
 
         // Main Process (Do something here)
+        // Blink the LED at 1 Hz (driven by 'blink', not toggled per loop, which would
+        // run at the loop cadence ~5 Hz).
         if (power_state == PboStateActive && !has_deferred) {
-            gpio_xor_mask(1UL << PICO_DEFAULT_LED_PIN);
+            gpio_put(PICO_DEFAULT_LED_PIN, blink);
         } else {
             gpio_put(PICO_DEFAULT_LED_PIN, 0);
         }

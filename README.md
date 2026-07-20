@@ -10,7 +10,7 @@ Raspberry Pi Pico / Pico 2 (RP2040 / RP2350) designs. It implements a compact po
 machine on top of a **mandatory external discrete power circuit**, and provides:
 
 * Power state machine (`Idle` / `Active`) driven by a push button switch
-* RP2 (rp2040, rp2350) dormant-mode sleep with clock preserve / restore
+* RP2 (rp2040, rp2350) dormant-mode Sleep / Charging with automatic clock restore on wake
 * Power-keep latch control that holds the on-board DC/DC enabled
 * Battery-voltage monitor
 * Low-battery detection
@@ -49,7 +49,7 @@ by side - the PCB is designed to be especially convenient for breadboard use.
 Other connectors on the PCB: USB-C (charging / USB-plugged detection), a battery connector, and an
 external power push-switch header.
 
-If you need GP27 or GP28 for another purpose (they also serve as the ADC1 / ADC2 inputs) or simply
+If you need GP27 or GP28 for another purpose (because they also serve as the ADC1 / ADC2 inputs) or simply
 prefer a different assignment, you do not have to mount the PCB side by side: wire the PCB's
 POWER_KEEP and POWER_SW to any other GPIOs instead and set `pin_power_keep` / `pin_power_sw` in
 `pbo_config_t` to match.
@@ -66,35 +66,48 @@ POWER_KEEP and POWER_SW to any other GPIOs instead and set `pin_power_keep` / `p
 
 ## Power state model
 
-> **Terminology.** *Sleep* is this library's low-power operation (a POWER double push, or the
-> automatic charge case): the CPU stops but the DC/DC latch may stay held, and it wakes back to
-> `PboStateActive`. It runs on the RP2 **dormant** mode - the Pico SDK's term
-> (`sleep_goto_dormant_until_pin()`) - and is unrelated to `sleep_ms()`, an ordinary busy-wait delay.
-> Throughout this document, *dormant* always means that physical low-power mode.
+> **Terminology.** This library runs two low-power *operations*, both implemented on the RP2
+> **dormant** hardware mode. Each belongs to a different state, so the POWER_KEEP latch - owned by
+> the state - already tells them apart:
+> - **Sleep** - a `PboStateActive` operation, entered by a POWER double push (default). The state
+>   holds POWER_KEEP, so the board keeps itself powered; a power push wakes it back to
+>   `PboStateActive`. (Sleep never leaves `PboStateActive`.)
+> - **Charging** - a `PboStateIdle` operation, entered automatically when the board is `Idle` with
+>   USB present. `Idle` releases POWER_KEEP, so power comes from USB only; if USB is removed the
+>   board falls to hardware **Stand-by**. A power push wakes it into `PboStateActive`.
+>
+> **dormant** is the RP2 hardware low-power mode itself (the Pico SDK's term, entered via
+> `sleep_goto_dormant_until_pin()`) that both operations use - unrelated to `sleep_ms()`, an
+> ordinary busy-wait delay.
+
+| Operation | State | POWER_KEEP | Powered by | Wake (power push) | If USB removed |
+|---|---|---|---|---|---|
+| **Sleep**    | `PboStateActive` | held     | own latch (battery / USB) | -> `PboStateActive` | stays (latch holds) |
+| **Charging** | `PboStateIdle`   | released | USB only                  | -> `PboStateActive` | -> **Stand-by** (off) |
 
 **Stand-by (hardware)** - the RP2 DC/DC is off and the firmware is not running. The board is
-powered on by the external H/W circuit (power-switch long push, or USB plug). In firmware this
+powered on by the external H/W circuit (power-switch push, or USB plug). In firmware this
 condition is represented only at its boundary, as `PboStateIdle`.
 
 ### State transition model
 ![power state model](doc/power_state_model.png)
 
 ### States (`pbo_state_t`)
-| State | power-keep | Meaning |
-|-------|-----------|---------|
-| `PboStateIdle`   | released | Boot boundary and shutdown target. With USB -> charging (dormant); without USB -> hardware powers off. Not a running state (CPU is dormant/off). |
-| `PboStateActive` | held     | Running. A Sleep just puts the CPU into dormant mode while staying in `PboStateActive` - it is not a separate state. |
+| State | POWER_KEEP | Meaning | Transition |
+|-------|-----------|---------|------------|
+| `PboStateIdle`   | released (0) | Boot boundary and shutdown target. Not a running state. | With USB present -> **Charging** (dormant); without USB -> hardware **Stand-by** (power off). |
+| `PboStateActive` | held (1)     | Running. | A **Sleep** puts the CPU into dormant mode while staying in `PboStateActive` - it is not a separate state. |
 
 ### Boot / power-on behavior
 By default, when USB is not connected, the board is in **Power OFF (Stand-by)** right after a reset
 is released; turn it on with the **Power ON switch** (which sets the DC/DC latch in hardware). When
-**USB is connected**, the board powers up and enters dormant mode (charging); power is still
+**USB is connected**, the board powers up and enters **Charging** (dormant); power is still
 supplied over USB in this state, so a firmware update (flashing over USB) is possible. The firmware
 decides the boot state as follows:
 
 | Condition | Result |
 |---|---|
-| USB present | powered up, then dormant (charging); USB keeps it powered. |
+| USB present | powered up, then **Charging** (dormant); USB keeps it powered. |
 | No USB, Power ON switch held (a real power-on) | come up running. |
 | No USB, switch not held (e.g. a warm RUN reset) | Power OFF (hardware Stand-by). |
 
@@ -102,7 +115,7 @@ So with no USB, a reset always restarts from **Power OFF** regardless of the sta
 press the Power ON switch to run again.
 
 ### Deferred actions (`pbo_deferred_reason_t`)
-The purpose of deferring is to give the application a time window before a Shutdown / Sleep / Charge
+The purpose of deferring is to give the application a time window before a Shutdown / Sleep / Charging
 transition actually happens - long enough to show the user that the transition is coming (an
 "announce" screen, LED pattern, etc.). Combined with cancellation it goes one step further: the
 application can announce the pending transition while letting the user decide whether to cancel it
@@ -113,12 +126,14 @@ now and **run automatically** after a delay, unless canceled. Delays come from `
 (default 0 ms, so the action runs on the next `pbo_process()`; set non-zero for an announce window,
 as the ssd1306 sample does) and are measured with absolute time (no fixed loop-cadence assumption).
 
-| Reason | Trigger | Run action | Cancelable |
-|---|---|---|---|
-| `PboDeferredSleep`      | POWER gesture mapped to Sleep, default double push (in `Active`)          | dormant -> `Active` | yes |
-| `PboDeferredShutdown`   | POWER gesture mapped to Shutdown, default single / long-long (in `Active`) | release latch -> `Idle` | yes |
-| `PboDeferredLowBattery` | low battery (in `Active`)        | release latch -> `Idle` | no |
-| `PboDeferredCharge`     | entering `Idle` with USB present | dormant -> `Active` | no |
+| Reason (enum) | Diagram label | Trigger | Result | Cancelable |
+|---|---|---|---|---|
+| `PboDeferredSleep`      | deferred User Sleep         | POWER double push (default, in `Active`)    | enter **Sleep** (dormant; stays `Active`) | yes |
+| `PboDeferredShutdown`   | deferred User Shutdown      | POWER long-long push (default, in `Active`) | release latch -> `Idle` | yes |
+| `PboDeferredLowBattery` | deferred Low Power Shutdown | low battery (in `Active`)                   | release latch -> `Idle` | no |
+| `PboDeferredCharge`     | deferred Charging           | entering `Idle` with USB present            | enter **Charging** (dormant) | no |
+
+`Cancelable = yes` corresponds to the diagram's **cancellable** (dashed) deferred points, `no` to the **deterministic** (solid) ones.
 
 While a deferred action is pending, the library forwards button events to `on_button_event`, so the
 application can call `pbo_cancel_deferred()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
@@ -197,7 +212,7 @@ asymmetrically. With the defaults:
 - OFF + single push -> **ON** (fixed; power-up / wake)
 - ON + long-long push (2 s) -> **OFF** (Shutdown)
 - ON + double push -> **Sleep**
-- ON + single push -> **nothing** — free for the application to use for a non-power feature via `on_button_event`
+- ON + single push -> **nothing** - free for the application to use for a non-power feature via `on_button_event`
 
 The deliberately heavier gesture for OFF (a 2 s hold) guards against an accidental single press
 powering the board down, while that same single press stays available to your app.
@@ -214,7 +229,7 @@ config.power_action_single = PboActionSleep;
 | `on_state_changed(new, prev)` | after an `Idle` ↔ `Active` transition (a Sleep stays `Active`, so it does not fire) | react to entering `Idle` (e.g. persist state before power-off) |
 | `on_deferred(reason)` | a deferred action was scheduled (delay began) | start rendering the announcement |
 | `on_button_event(btn)` | gestures not mapped to a power action (user gestures, and POWER gestures set to `PboActionNone`), and all events while a deferred action is pending | product features / call `pbo_cancel_deferred()` |
-| `on_enter_dormant()` | just before entering dormant mode (a Sleep or charging) | quiesce peripherals (display off, peripheral power off); optionally call `pbo_dormant_set_low_leakage()` - see [Low-power tuning](#low-power-dormant-tuning) |
+| `on_enter_dormant()` | just before entering dormant mode (a Sleep or Charging) | quiesce peripherals (display off, peripheral power off); optionally call `pbo_dormant_set_low_leakage()` - see [Low-power tuning](#low-power-dormant-tuning) |
 | `on_exit_dormant()` | just after waking (state already `Active`) | restore peripherals (peripheral power on); re-init any pins released by a low-leakage sweep |
 
 All callbacks run in `pbo_process()` (main-loop) context - never in an ISR.

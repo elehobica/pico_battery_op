@@ -390,9 +390,9 @@ static void _begin_defer(pbo_deferred_reason_t reason, uint32_t defer_ms)
     }
 }
 
-// Enter dormant mode and resume running. Shared by the Sleep and the charging dormant:
-// the power-keep latch (held for Sleep, released for charge) is already set by the
-// current state's invariant, so this touches only the callbacks.
+// Enter dormant mode and resume running. Shared by Sleep and Charging: the power-keep latch
+// (held for Sleep, released for Charging) is already set by the current state's invariant, so
+// this touches only the callbacks.
 static void _dormant_and_resume()
 {
     if (_cb.on_enter_dormant != nullptr) {
@@ -411,12 +411,12 @@ static void _run_deferred()
     _deferred = PboDeferredNone;
     switch (reason) {
         case PboDeferredSleep:    // enter dormant from PboStateActive (Sleep, latch held)
-        case PboDeferredCharge:   // enter dormant from PboStateIdle (charge, latch released)
+        case PboDeferredCharge:   // enter dormant from PboStateIdle (Charging, latch released)
             _dormant_and_resume();
             break;
         case PboDeferredShutdown:
         case PboDeferredLowBattery:
-            // release the latch; PboStateIdle then charges (USB) or powers off (no USB)
+            // release the latch; PboStateIdle then runs Charging (USB) or powers off (no USB)
             _set_state(PboStateIdle);
             break;
         default:
@@ -482,7 +482,7 @@ void pbo_init(const pbo_config_t* config)
     // that level BEFORE enabling output, so it is never pulsed low. On a warm reset while
     // still powered, a low pulse would command the board's own DC/DC off and can brown-out
     // / hang it.
-    //   USB present -> release (charge path).
+    //   USB present -> release (Charging path).
     //   no USB      -> come up running only if the power switch is held (a real power-on);
     //                  otherwise release POWER_KEEP -> hardware Stand-by (power off). So a
     //                  reset released with no USB always restarts from OFF, regardless of
@@ -582,7 +582,7 @@ void pbo_start()
     // Config and callbacks were already taken by pbo_init().
     _deferred = PboDeferredNone;
     // The initial PboStateIdle is the boot boundary; pbo_process() resolves it on
-    // the first tick (USB -> charge; no USB -> run only if the power switch was held at
+    // the first tick (USB -> Charging; no USB -> run only if the power switch was held at
     // boot, see pbo_init/_boot_run). The _boot flag scopes that rule to boot only, so a
     // later shutdown into PboStateIdle (no USB) powers off instead of re-running.
     _boot = true;
@@ -640,7 +640,7 @@ void pbo_process()
         }
         case PboStateIdle:
             // Reached as the boot boundary, or via shutdown / low-battery commit.
-            //   USB present     : announce charging, then dormant.
+            //   USB present     : announce Charging, then dormant.
             //   no USB & boot    : run only if the power switch was held at boot
             //                      (_boot_run); otherwise POWER_KEEP released -> Stand-by.
             //   no USB & !boot   : post-shutdown -> the hardware is powering off.

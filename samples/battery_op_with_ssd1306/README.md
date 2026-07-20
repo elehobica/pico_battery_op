@@ -48,7 +48,7 @@ dormant, and off together with the display before the library goes dormant.
 The on-board LED blinks while running (`PboStateActive` with no pending announce); it is off otherwise.
 
 Button behavior follows the library's [default power-button mapping](../../README.md#power-button-mapping)
-(double push → Sleep, long-long push → Shutdown), with 3 s announce windows; a single push during a
+(double push -> Sleep, long-long push -> Shutdown), with 3 s announce windows; a single push during a
 cancelable announce cancels it.
 
 ## How the application integrates with the library
@@ -56,7 +56,7 @@ The sample registers three callbacks and drives `pbo_process()` each loop (see [
 
 | Callback | Application action |
 |---|---|
-| `on_button_event` | power single push → `pbo_cancel_deferred()` (abort a pending cancelable announce) |
+| `on_button_event` | power single push -> `pbo_cancel_deferred()` (abort a pending cancelable announce) |
 | `on_enter_dormant` | `display_deinit()`, display power **off**, then `pbo_dormant_set_low_leakage(0)` to lower dormant current |
 | `on_exit_dormant` | re-init the released pins, display power **on**, then `display_init()` after waking |
 

@@ -15,6 +15,7 @@ machine on top of a **mandatory external discrete power circuit**, and provides:
 * Battery-voltage monitor
 * Low-battery detection
 * USB-power-plugged (charge) detection
+* Operation while charging - the board keeps running on USB power while the battery charges
 * Button action recognition (single / double / triple / long / long-long)
 * A **deferred action** mechanism (delay, auto-run, cancelable) that the application should determine
 * Callback-based integration, to implement application-specific logic on the user side
@@ -139,6 +140,23 @@ While a deferred action is pending, the library forwards button events to `on_bu
 application can call `pbo_cancel_deferred()` (e.g. a second power push aborts a `Sleep` / `Shutdown`).
 
 ## API
+
+The simplest usage - all defaults, no callbacks:
+
+```c
+#include "pico/stdlib.h"
+#include "pico_battery_op.h"
+
+int main() {
+    pbo_init(NULL);   // NULL -> all defaults
+    pbo_start();
+    while (true) {
+        pbo_process();   // runs the power state machine (may block while dormant)
+        // your application code here
+        sleep_ms(50);
+    }
+}
+```
 
 ### Lifecycle
 | Function | Description |

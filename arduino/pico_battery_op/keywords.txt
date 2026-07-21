@@ -1,0 +1,61 @@
+#######################################
+# Syntax Coloring Map For pico_battery_op
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+pbo_config_t	KEYWORD1
+pbo_callbacks_t	KEYWORD1
+pbo_state_t	KEYWORD1
+pbo_deferred_reason_t	KEYWORD1
+pbo_deferred_info_t	KEYWORD1
+pbo_power_action_t	KEYWORD1
+button_action_t	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+pbo_get_default_config	KEYWORD2
+pbo_init	KEYWORD2
+pbo_start	KEYWORD2
+pbo_process	KEYWORD2
+pbo_get_state	KEYWORD2
+pbo_get_deferred	KEYWORD2
+pbo_cancel_deferred	KEYWORD2
+pbo_get_state_elapsed_ms	KEYWORD2
+pbo_get_battery_voltage	KEYWORD2
+pbo_get_usb_power_detected	KEYWORD2
+pbo_reboot	KEYWORD2
+pbo_is_caused_reboot	KEYWORD2
+pbo_get_dormant_reserved_pin_mask	KEYWORD2
+pbo_dormant_set_low_leakage	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+PBO_PIN_UNUSED	LITERAL1
+PboStateIdle	LITERAL1
+PboStateActive	LITERAL1
+PboDeferredNone	LITERAL1
+PboDeferredSleep	LITERAL1
+PboDeferredShutdown	LITERAL1
+PboDeferredLowBattery	LITERAL1
+PboDeferredCharge	LITERAL1
+PboActionNone	LITERAL1
+PboActionSleep	LITERAL1
+PboActionShutdown	LITERAL1
+ButtonPowerSingle	LITERAL1
+ButtonPowerDouble	LITERAL1
+ButtonPowerTriple	LITERAL1
+ButtonPowerLong	LITERAL1
+ButtonPowerLongLong	LITERAL1
+ButtonUserSingle	LITERAL1
+ButtonUserDouble	LITERAL1
+ButtonUserTriple	LITERAL1
+ButtonUserLong	LITERAL1
+ButtonUserLongLong	LITERAL1
+ButtonOthers	LITERAL1

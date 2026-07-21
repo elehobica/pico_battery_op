@@ -12,9 +12,23 @@
 #include "hardware/watchdog.h"
 #include "pico/low_power.h"
 #include "pico/stdlib.h"
+#if defined(ARDUINO)
+// The Arduino core does not ship pico-extras, so the pico_sleep sources are vendored into this
+// library. Their global symbols are prefixed with pbov_ so they cannot clash with another library
+// that bundles the same pico-extras sources; map them back to the SDK names used below.
+#include "pbo_vendor/pbo_sleep.h"
+#define sleep_run_from_xosc          pbov_sleep_run_from_xosc
+#define sleep_goto_dormant_until_pin pbov_sleep_goto_dormant_until_pin
+#define sleep_power_up               pbov_sleep_power_up
+#else
 #include "pico/sleep.h"
+#endif
+#if !defined(ARDUINO)
+// Under the Arduino core the USB CDC / Serial stack is owned by the core, and
+// pico_stdio_uart / pico_stdio_usb are not linked, so these are excluded there.
 #include "pico/stdio_uart.h"
 #include "pico/stdio_usb.h"
+#endif
 #include "pico/util/queue.h"
 
 // Debug print. Enabled only when PBO_DPRINT is defined (e.g. -DPBO_DPRINT at build
@@ -116,8 +130,10 @@ static absolute_time_t _defer_deadline;
 
 static void _start_serial()
 {
+#if !defined(ARDUINO)
     stdio_uart_init();
     stdio_usb_init(); // don't call multiple times without stdio_usb_deinit because of duplicated IRQ calls
+#endif
 }
 
 static void _set_power_keep(bool value)
@@ -326,7 +342,9 @@ static void _enter_dormant_and_wake()
     // === [1] Preparation for dormant ===
     bool psm = gpio_get(PIN_DCDC_PSM_CTRL);
     gpio_put(PIN_DCDC_PSM_CTRL, 0); // PFM mode for better efficiency
+#if !defined(ARDUINO)
     stdio_usb_deinit(); // terminate usb cdc
+#endif
 
     // === [2] goto dormant then wake up ===
     // Clock preserve/restore is handled by the Pico SDK: sleep_run_from_xosc() switches the

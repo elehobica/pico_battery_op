@@ -17,8 +17,20 @@
 set -e
 
 IMAGE="elehobica/pico-sdk-dev-docker:sdk-2.3.0"
+SDK_PATH_IN_IMAGE="/home/rp2dev/pico/pico-sdk"   # PICO_SDK_PATH inside the container
 SAMPLES_DIR="$(cd "$(dirname "$0")" && pwd)"     # .../samples
 PROJECT_ROOT="$(cd "$SAMPLES_DIR/.." && pwd)"    # repository root
+
+# Read the Pico SDK version from pico_sdk_version.cmake inside the container.
+sdk_version() {
+  docker run --rm "$IMAGE" bash -c '
+    f="'"$SDK_PATH_IN_IMAGE"'/pico_sdk_version.cmake"
+    maj=$(sed -n "s/^[[:space:]]*set(PICO_SDK_VERSION_MAJOR \([0-9]*\)).*/\1/p" "$f")
+    min=$(sed -n "s/^[[:space:]]*set(PICO_SDK_VERSION_MINOR \([0-9]*\)).*/\1/p" "$f")
+    rev=$(sed -n "s/^[[:space:]]*set(PICO_SDK_VERSION_REVISION \([0-9]*\)).*/\1/p" "$f")
+    if [[ -n "$maj$min$rev" ]]; then echo "${maj}.${min}.${rev}"; else echo "unknown"; fi
+  '
+}
 
 # Sample is determined by the caller's current working directory.
 SAMPLE_DIR="$PWD"
@@ -66,6 +78,7 @@ fi
 SAMPLE_REL="samples/$SAMPLE_NAME"
 
 echo "Sample: $SAMPLE_REL"
+echo "Pico SDK version: $(sdk_version) (from $SDK_PATH_IN_IMAGE)"
 
 # Run cmake/make inside the SDK container.
 # Args: $1=build_dir  $2=extra cmake options (may be empty)
@@ -81,7 +94,7 @@ run_build() {
   docker run --rm \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp \
-    -e PICO_SDK_PATH=/home/rp2dev/pico/pico-sdk \
+    -e PICO_SDK_PATH="$SDK_PATH_IN_IMAGE" \
     -e PICO_EXTRAS_PATH=/home/rp2dev/pico/pico-extras \
     -e PICO_EXAMPLES_PATH=/home/rp2dev/pico/pico-examples \
     -v "$PROJECT_ROOT":/workspace \

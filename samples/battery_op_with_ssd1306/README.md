@@ -2,89 +2,91 @@
 
 ![Scene1](doc/battery_op_with_ssd1306_breadboard.jpg)
 
-Reference application for the [pico_battery_op](../../README.md) power-management library.
-On top of the library's power state machine it adds an SSD1306 OLED status display,
-peripheral 3.3 V power control, an LED activity indicator, and the product-specific
-button UX. All of this is **application** code - the library itself knows nothing about
-the display, the LED, or peripheral power.
+Reference application for the [pico_battery_op](../../README.md) power-management library. On top of
+the library's power state machine it adds an SSD1306 OLED status display, application display-power
+control, an LED activity indicator, and the power-button UX. All of this is **application** code -
+the library itself knows nothing about the display, the LED, or its power.
+
+For the power state model, button mapping, deferred actions and the library API, see the
+[library README](../../README.md). This document covers only what is specific to this sample.
 
 ## Supported board and peripheral devices
-* Raspberry Pi Pico
-* Raspberry Pi Pico 2
-* SSD1306 OLED display 128x64 pixels (I2C1 on GPIO2 / GPIO3)
-* TP4056 module (Li-po battery charger)
+* Raspberry Pi Pico / Pico 2
+* SSD1306 OLED display, 128x64 pixels, I2C address `0x3c`
+* Single-cell Li-ion / Li-po battery with USB charging
+
+## Pin assignments
+Application-side GPIOs used by this sample, on top of the library / PCB pins (see the library's
+[GPIO assignments](../../README.md#gpio-assignments-for-rp2)).
+
+| Signal | GPIO | Direction | Note |
+|--------|------|-----------|------|
+| Display power | 14 | out (push-pull) | display power enable, high = on |
+| I2C0 SDA      | 12 | I2C | SSD1306 data |
+| I2C0 SCL      | 13 | I2C | SSD1306 clock |
+| On-board LED  | `PICO_DEFAULT_LED_PIN` | out | activity blink while running |
+
+This sample does not wire a user switch.
 
 ## Hardware / schematic
 This sample requires the mandatory external discrete power circuit assumed by the library
-(external DC/DC EN control, battery voltage divider, USB detect, peripheral power switch).
+(external DC/DC EN control, battery voltage divider, USB detect, display power switch).
 
 * Optimized version with SMD devices - [doc/battery_op_with_ssd1306_schematic.pdf](doc/battery_op_with_ssd1306_schematic.pdf)
-* Alternative for breadboard test (non-SMD) - [doc/battery_op_with_ssd1306_breadboard_schematic.pdf](doc/battery_op_with_ssd1306_breadboard_schematic.pdf)
 
-### Comments for schematic
-* T1 switches battery power to be used only when USB is unplugged. Please refer to the "Using a Battery Charger" section of [pico-datasheet.pdf](https://datasheets.raspberrypi.org/pico/pico-datasheet.pdf)
-* T2 controls the EN signal of the DC/DC converter on the Raspberry Pi Pico board. To enable the DC/DC converter, EN needs to be High by switching T2 off. T2 is on in Stand-by and turns off when the power switch is pushed, or USB is plugged, or the POWER_KEEP signal goes High.
-* While USB is unplugged, VBUS can be around 0.8 V by battery power through reverse current from the Schottky diode on the Raspberry Pi Pico board. That is why the voltage divider (R4, R5) is needed at the gate of T4 to keep T4 off while USB is unplugged.
-* T1 and T5 (P-ch MOSFET) are used as high-side switches. To drive the Raspberry Pi Pico and peripheral devices stably, choose P-ch MOSFETs with low On-Resistance (~0.1 ohm) and low threshold voltage (~2.5 V).
+## Display power (application-owned)
+Display power is controlled by the application on **GPIO14** (push-pull output, **high = on**). The
+SSD1306 runs under it. The application turns display power on at startup and after waking from
+dormant, and off together with the display before the library goes dormant.
 
-### Peripheral power (application-owned)
-Peripheral 3.3 V power is controlled by the application on **GPIO20** (open-drain, active-low).
-The OLED runs under peripheral power. The application:
-* turns peripheral power **on** at startup and after waking from dormant (`on_exit_dormant`),
-* turns it **off** together with the display before the library goes dormant (`on_enter_dormant`),
-* toggles it on a user-switch single push.
-
-## User interface / behavior
-
-### Power state diagram
-![power_state_diagram](doc/power_state_diagram.png)
-
-### Display screens
+## Display screens
 | State | Display |
 |-------|---------|
-| `PboStateActive` | power source (`USB Power` / `Battery Power`) and voltage, `Peri. Power: ON/OFF`, an uptime clock. During an announce phase the bottom line blinks `GO DORMANT` / `SHUTDOWN` / `LOW BATTERY`. |
+| `PboStateActive` | title `Battery Op. Demo`, the power source (`USB Power` / `Battery Power`) and its voltage, and an uptime clock. During an announce phase the bottom area blinks `GO DORMANT` / `SHUTDOWN` / `LOW BATTERY`. |
 | `PboStateIdle` (USB present) | blinking `Charging`. |
 
-### Buttons
-| Action | Effect |
-|--------|--------|
-| Power switch - double push | start the `Sleep` announce (`GO DORMANT`), then dormant |
-| Power switch - long-long push | start the `Shutdown` announce, then `Idle` (charge if USB, otherwise power off) |
-| Power switch - single push during a cancelable announce | cancel it (`pbo_cancel_deferred()`) |
-| User switch - single push | toggle peripheral power (OLED) |
-| Low battery detected | start the `LOW BATTERY` announce (not cancelable), then `Idle` |
-
-### LED
 The on-board LED blinks while running (`PboStateActive` with no pending announce); it is off otherwise.
 
+Button behavior follows the library's [default power-button mapping](../../README.md#power-button-mapping)
+(double push -> Sleep, long-long push -> Shutdown), with 3 s announce windows; a single push during a
+cancelable announce cancels it.
+
 ## How the application integrates with the library
-The sample registers three callbacks and drives `pbo_process()` each loop
-(see [main.cpp](main.cpp)):
+The sample registers three callbacks and drives `pbo_process()` each loop (see [main.cpp](main.cpp)):
 
 | Callback | Application action |
 |---|---|
-| `on_button_event` | user single push → toggle peripheral power (OLED); power single push → `pbo_cancel_deferred()` (abort a pending cancelable announce) |
-| `on_enter_dormant` | `display_deinit()` + peripheral power **off** before dormant |
-| `on_exit_dormant` | peripheral power **on** after waking |
+| `on_button_event` | power single push -> `pbo_cancel_deferred()` (abort a pending cancelable announce) |
+| `on_enter_dormant` | `display_deinit()`, display power **off**, then `pbo_dormant_set_low_leakage(0)` to lower dormant current |
+| `on_exit_dormant` | re-init the released pins, display power **on**, then `display_init()` after waking |
 
 ```c
-peripheral_power_init();
+display_power_init();
 pbo_config_t config = pbo_get_default_config();
-config.pin_user_sw = 17;                       // this board wires the user switch to GPIO17
-config.sleep_defer_ms = 3000;                  // 3 s announce windows (library default is 0)
+config.sleep_defer_ms    = 3000;               // 3 s announce windows (library default is 0)
 config.shutdown_defer_ms = 3000;
-config.charge_defer_ms = 3000;
-config.callbacks.on_button_event = on_button_event;
+config.charge_defer_ms   = 3000;
+config.callbacks.on_button_event  = on_button_event;
 config.callbacks.on_enter_dormant = on_enter_dormant;
-config.callbacks.on_exit_dormant = on_exit_dormant;
+config.callbacks.on_exit_dormant  = on_exit_dormant;
 pbo_init(&config);
 pbo_start();
+set_display_power(true);
+sleep_ms(100);                                 // wait for the SSD1306 power to stabilize
+display_init();
 while (true) {
     pbo_process();
     // render SSD1306 from pbo_get_state() / pbo_get_deferred()
     sleep_ms(100);
 }
 ```
+
+### Dormant low-leakage
+`on_enter_dormant()` calls `pbo_dormant_set_low_leakage(0)` to put every GPIO except the library's
+reserved pins into the lowest-leakage state, minimizing current while dormant. The sweep is
+destructive, so `on_exit_dormant()` re-initializes the application pins it let go (LED, display
+power, I2C) and calls `display_init()` to re-allocate the display buffer and re-configure the panel.
+See [Low-power (dormant) tuning](../../README.md#low-power-dormant-tuning) in the library README.
 
 ## How to build
 The output binary is `battery_op_with_ssd1306.uf2`. Using the Docker build (no local SDK needed):

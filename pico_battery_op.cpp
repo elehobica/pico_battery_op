@@ -3,20 +3,14 @@
 / Released under the BSD-2-Clause
 / refer to https://opensource.org/licenses/BSD-2-Clause
 /------------------------------------------------------*/
-/* Except for 'recover_from_sleep' part, see comment for copyright */
 
 #include "pico_battery_op.h"
 
 #include "hardware/adc.h"
-#include "hardware/clocks.h"
 #include "hardware/gpio.h"
-#include "hardware/pll.h"
-#include "hardware/rosc.h"
-#include "hardware/structs/clocks.h"
-#include "hardware/structs/scb.h"
 #include "hardware/sync.h"
 #include "hardware/watchdog.h"
-#include "pico/runtime_init.h"
+#include "pico/low_power.h"
 #include "pico/stdlib.h"
 #include "pico/sleep.h"
 #include "pico/stdio_uart.h"
@@ -83,10 +77,11 @@ static const float DEFAULT_BATT_CALIB_COEF_A = 2.9917; // scale ADC pin voltage 
 static const float DEFAULT_BATT_CALIB_COEF_B = -0.020; // constant offset added after scaling [V]
 static const float DEFAULT_LOW_BATTERY_THRESHOLD = 2.9; // [V]
 
-// for preserving clock configuration
-static uint32_t _scr;
-static uint32_t _sleep_en0;
-static uint32_t _sleep_en1;
+// Delay before the reboot watchdog fires (pbo_reboot()). Formerly borrowed from the
+// pico_stdio_usb internal PICO_CONFIG PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS
+// (default 100 ms), which is no longer visible to application code in newer Pico SDKs;
+// use a local constant so pbo_reboot() stays SDK-version robust.
+static const uint32_t REBOOT_DELAY_MS = 100;
 
 // Configuration for button recognition
 static const uint32_t RELEASE_IGNORE_COUNT = 8;
@@ -326,26 +321,6 @@ static void _clear_btn_evt()
     */
 }
 
-// === 'recover_from_sleep' part (start) ===================================
-// great reference from 'recover_from_sleep'
-// https://github.com/ghubcoder/PicoSleepDemo | https://ghubcoder.github.io/posts/awaking-the-pico/
-static void _preserve_clock_before_dormant()
-{
-    _scr = scb_hw->scr;
-    _sleep_en0 = clocks_hw->sleep_en0;
-    _sleep_en1 = clocks_hw->sleep_en1;
-}
-
-static void _recover_clock_after_dormant()
-{
-    rosc_write(&rosc_hw->ctrl, ROSC_CTRL_ENABLE_BITS); //Re-enable ring Oscillator control
-    scb_hw->scr = _scr;
-    clocks_hw->sleep_en0 = _sleep_en0;
-    clocks_hw->sleep_en1 = _sleep_en1;
-    runtime_init_clocks(); // reset clocks
-}
-// === 'recover_from_sleep' part (end) ===================================
-
 static void _enter_dormant_and_wake()
 {
     // === [1] Preparation for dormant ===
@@ -354,8 +329,11 @@ static void _enter_dormant_and_wake()
     stdio_usb_deinit(); // terminate usb cdc
 
     // === [2] goto dormant then wake up ===
+    // Clock preserve/restore is handled by the Pico SDK: sleep_run_from_xosc() switches the
+    // clocks to the dormant source and sleep_power_up() restores them on wake. This replaces
+    // the formerly ported 'recover_from_sleep' block and matches the pico-extras
+    // 'hello_dormant' example.
     uint32_t ints = save_and_disable_interrupts(); // (+a)
-    _preserve_clock_before_dormant(); // (+b)
     sleep_run_from_xosc();
     // go to dormant until the Power switch is pushed (fall edge detected)
     sleep_goto_dormant_until_pin(_cfg.pin_power_sw, true, false);
@@ -365,7 +343,7 @@ static void _enter_dormant_and_wake()
     // ---------------
 
     // wake up from here (Power switch push)
-    _recover_clock_after_dormant(); // (-b)
+    sleep_power_up(); // restore clocks / oscillators after dormant
     restore_interrupts(ints); // (-a)
 
     // === [3] treatments after wake up ===
@@ -412,9 +390,9 @@ static void _begin_defer(pbo_deferred_reason_t reason, uint32_t defer_ms)
     }
 }
 
-// Enter dormant mode and resume running. Shared by the Sleep and the charging dormant:
-// the power-keep latch (held for Sleep, released for charge) is already set by the
-// current state's invariant, so this touches only the callbacks.
+// Enter dormant mode and resume running. Shared by Sleep and Charging: the power-keep latch
+// (held for Sleep, released for Charging) is already set by the current state's invariant, so
+// this touches only the callbacks.
 static void _dormant_and_resume()
 {
     if (_cb.on_enter_dormant != nullptr) {
@@ -433,12 +411,12 @@ static void _run_deferred()
     _deferred = PboDeferredNone;
     switch (reason) {
         case PboDeferredSleep:    // enter dormant from PboStateActive (Sleep, latch held)
-        case PboDeferredCharge:   // enter dormant from PboStateIdle (charge, latch released)
+        case PboDeferredCharge:   // enter dormant from PboStateIdle (Charging, latch released)
             _dormant_and_resume();
             break;
         case PboDeferredShutdown:
         case PboDeferredLowBattery:
-            // release the latch; PboStateIdle then charges (USB) or powers off (no USB)
+            // release the latch; PboStateIdle then runs Charging (USB) or powers off (no USB)
             _set_state(PboStateIdle);
             break;
         default:
@@ -504,7 +482,7 @@ void pbo_init(const pbo_config_t* config)
     // that level BEFORE enabling output, so it is never pulsed low. On a warm reset while
     // still powered, a low pulse would command the board's own DC/DC off and can brown-out
     // / hang it.
-    //   USB present -> release (charge path).
+    //   USB present -> release (Charging path).
     //   no USB      -> come up running only if the power switch is held (a real power-on);
     //                  otherwise release POWER_KEEP -> hardware Stand-by (power off). So a
     //                  reset released with no USB always restarts from OFF, regardless of
@@ -560,7 +538,7 @@ bool pbo_get_usb_power_detected()
 
 void pbo_reboot()
 {
-    watchdog_reboot(0, 0, PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS);
+    watchdog_reboot(0, 0, REBOOT_DELAY_MS);
 }
 
 bool pbo_is_caused_reboot()
@@ -568,12 +546,43 @@ bool pbo_is_caused_reboot()
     return watchdog_caused_reboot();
 }
 
+uint32_t pbo_get_dormant_reserved_pin_mask()
+{
+    // GPIOs the library uses that an application low-leakage sweep must never touch: the
+    // wake pin (pin_power_sw) and the DC/DC power-keep latch (pin_power_keep) must retain
+    // their state through dormant, and the remaining library-owned pins are simply left
+    // as-is (the library does not sweep its own pins).
+    uint32_t mask = (1u << _cfg.pin_power_keep)
+                  | (1u << _cfg.pin_power_sw)
+                  | (1u << PIN_DCDC_PSM_CTRL)
+                  | (1u << PIN_USB_POWER_DETECT)
+                  | (1u << PIN_BATT_LVL);
+    if (_cfg.pin_user_sw != PBO_PIN_UNUSED) {
+        mask |= (1u << _cfg.pin_user_sw);
+    }
+    return mask;
+}
+
+void pbo_dormant_set_low_leakage(uint32_t app_hold_mask)
+{
+    // Put every GPIO that is neither reserved by the library nor held by the application
+    // into the lowest-leakage state (pulls off, input buffer off, output driver off) to
+    // minimize current while dormant. This operation is destructive and does not save the
+    // previous pad state, so the application must re-initialize any pin it let go (i.e. not
+    // in app_hold_mask) after wake - typically in on_exit_dormant(). Call this just before
+    // entering dormant, typically from on_enter_dormant().
+    // NOTE: Pico / Pico 2 have <= 30 GPIOs, so this 32-bit mask covers all of bank 0. For a
+    // package with more than 32 GPIOs, use low_power_set_pins_low_leakage_exclude_mask64().
+    low_power_set_pins_low_leakage_exclude_mask(
+        pbo_get_dormant_reserved_pin_mask() | app_hold_mask);
+}
+
 void pbo_start()
 {
     // Config and callbacks were already taken by pbo_init().
     _deferred = PboDeferredNone;
     // The initial PboStateIdle is the boot boundary; pbo_process() resolves it on
-    // the first tick (USB -> charge; no USB -> run only if the power switch was held at
+    // the first tick (USB -> Charging; no USB -> run only if the power switch was held at
     // boot, see pbo_init/_boot_run). The _boot flag scopes that rule to boot only, so a
     // later shutdown into PboStateIdle (no USB) powers off instead of re-running.
     _boot = true;
@@ -631,7 +640,7 @@ void pbo_process()
         }
         case PboStateIdle:
             // Reached as the boot boundary, or via shutdown / low-battery commit.
-            //   USB present     : announce charging, then dormant.
+            //   USB present     : announce Charging, then dormant.
             //   no USB & boot    : run only if the power switch was held at boot
             //                      (_boot_run); otherwise POWER_KEEP released -> Stand-by.
             //   no USB & !boot   : post-shutdown -> the hardware is powering off.

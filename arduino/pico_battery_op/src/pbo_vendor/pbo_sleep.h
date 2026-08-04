@@ -8,7 +8,7 @@
 #define _PBO_VENDOR_SLEEP_H_
 
 #include "pico.h"
-#include "pbo_rosc_extra.h"
+#include "pbo_rosc.h"    // vendored hardware/rosc.h (not on the arduino-pico include path)
 #include "hardware/timer.h"
 #include "pico/aon_timer.h"
 

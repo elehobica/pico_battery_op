@@ -132,7 +132,9 @@ void pbov_sleep_run_from_dormant_source(dormant_source_t dormant_source) {
     }
 
     // Reconfigure uart with new clocks
-    setup_default_uart();
+#if !defined(ARDUINO)
+    setup_default_uart();  // the Arduino core owns Serial/UART; setup_default_uart is not linked under ARDUINO
+#endif
 }
 
 static void processor_deep_sleep(void) {
@@ -294,5 +296,7 @@ void pbov_sleep_power_up(void)
 #endif
 
     // UART needs to be reinitialised with the new clock frequencies for stable output
-    setup_default_uart();
+#if !defined(ARDUINO)
+    setup_default_uart();  // the Arduino core owns Serial/UART; setup_default_uart is not linked under ARDUINO
+#endif
 }

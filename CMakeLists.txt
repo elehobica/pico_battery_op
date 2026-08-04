@@ -16,7 +16,6 @@ if (NOT TARGET pico_battery_op)
         hardware_sleep
         hardware_uart
         hardware_watchdog
-        pico_low_power
         pico_runtime_init
         pico_stdio_usb
     )

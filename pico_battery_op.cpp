@@ -8,9 +8,9 @@
 
 #include "hardware/adc.h"
 #include "hardware/gpio.h"
+#include "hardware/regs/io_bank0.h"
 #include "hardware/sync.h"
 #include "hardware/watchdog.h"
-#include "pico/low_power.h"
 #include "pico/stdlib.h"
 #if defined(ARDUINO)
 // The Arduino core does not ship pico-extras, so the pico_sleep sources are vendored into this
@@ -589,10 +589,22 @@ void pbo_dormant_set_low_leakage(uint32_t app_hold_mask)
     // previous pad state, so the application must re-initialize any pin it let go (i.e. not
     // in app_hold_mask) after wake - typically in on_exit_dormant(). Call this just before
     // entering dormant, typically from on_enter_dormant().
-    // NOTE: Pico / Pico 2 have <= 30 GPIOs, so this 32-bit mask covers all of bank 0. For a
-    // package with more than 32 GPIOs, use low_power_set_pins_low_leakage_exclude_mask64().
-    low_power_set_pins_low_leakage_exclude_mask(
-        pbo_get_dormant_reserved_pin_mask() | app_hold_mask);
+    //
+    // This mirrors the SDK low_power_set_pins_low_leakage_exclude_mask(), reimplemented here so the
+    // library does not depend on pico_low_power. Linking pico_low_power would drag in its
+    // Pstate / persistent-data code, which fails to link under the Arduino core on RP2350 (the
+    // core's linker script omits __persistent_data_start__/__persistent_data_end__).
+    //
+    // NOTE: Pico / Pico 2 have <= 30 GPIOs, so this 32-bit mask covers all of bank 0; the loop is
+    // capped at 32 to keep the shift well-defined on any larger package.
+    const uint32_t exclude = pbo_get_dormant_reserved_pin_mask() | app_hold_mask;
+    const uint32_t n = (NUM_BANK0_GPIOS < 32) ? NUM_BANK0_GPIOS : 32;
+    for (uint32_t i = 0; i < n; i++) {
+        if (exclude & (1u << i)) continue;
+        gpio_disable_pulls(i);
+        gpio_set_input_enabled(i, false);
+        gpio_set_oeover(i, IO_BANK0_GPIO0_CTRL_OEOVER_VALUE_DISABLE);
+    }
 }
 
 void pbo_start()

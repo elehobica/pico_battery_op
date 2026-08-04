@@ -9,9 +9,9 @@ what is specific to the Arduino build.
 
 ## Requirements
 
-- **[arduino-pico](https://github.com/earlephilhower/arduino-pico) core 5.7.0 or later.**
-  The library uses `pico_low_power`, which needs Pico SDK 2.3.0; arduino-pico adopted that SDK in
-  5.7.0. Older cores will fail to build.
+- **[arduino-pico](https://github.com/earlephilhower/arduino-pico) core with Pico SDK 2.3.0** (5.7.0
+  or later; developed against 6.0.0). The vendored pico-extras sources (see below) are taken from
+  pico-extras `sdk-2.3.0`, so the core's bundled SDK should match to avoid API drift.
 - The **mandatory external power circuit** described in the main repository. Without it the power
   state machine cannot work.
 
@@ -54,12 +54,20 @@ They keep their original copyright headers and are BSD-3-Clause (Raspberry Pi (T
 compatible with this project's BSD-2-Clause.
 
 **Why `pbo_rosc.h`.** `pbo_sleep.c` calls `rosc_disable()` / `rosc_set_dormant()` / `rosc_restart()`.
-Their object code is linked (via `pico_low_power` -> `hardware_rosc`), but the Arduino core does
-**not** put `hardware_rosc` on the compile include path, so `hardware/rosc.h` is not found. `pbo_rosc.h`
-is a verbatim copy of that header supplying the declarations; the functions keep their real names
-because they resolve to the single core implementation (they are not our code, so there is nothing to
-duplicate). The unrelated `hardware_rosc_extra` from pico-extras is **not** vendored: nothing in
-`pbo_sleep.*` uses it.
+Their object code is in the core's `libpico.a` (`hardware_rosc` is built into it), but the Arduino
+core does **not** put `hardware_rosc` on the compile include path, so `hardware/rosc.h` is not found.
+`pbo_rosc.h` is a verbatim copy of that header supplying the declarations; the functions keep their
+real names because they resolve to the single core implementation (they are not our code, so there is
+nothing to duplicate). The unrelated `hardware_rosc_extra` from pico-extras is **not** vendored:
+nothing in `pbo_sleep.*` uses it.
+
+**No `pico_low_power`.** `pbo_dormant_set_low_leakage()` deliberately reimplements the GPIO sweep on
+`hardware_gpio` instead of calling `pico_low_power`'s
+`low_power_set_pins_low_leakage_exclude_mask()`. Referencing that function would pull the whole
+`low_power.c.o` into the link, and on **RP2350** that object also contains the Pstate /
+persistent-data code, which fails to link under the Arduino core (its RP2350 linker script omits
+`__persistent_data_start__` / `__persistent_data_end__`). Avoiding the dependency fixes the Pico 2
+build and works identically on RP2040.
 
 **Namespacing.** Arduino links all libraries of a sketch together, so two libraries bundling the
 same pico-extras sources would collide with `multiple definition` errors, and a shared
@@ -73,8 +81,8 @@ noted above.)
 
 Everything else these files need is already provided by the core and confirmed present on the
 include path: `hardware_clocks`, `hardware_irq`, `hardware_gpio`, `hardware_xosc`, `hardware_pll`,
-`hardware_sync`, `pico_runtime_init`, `pico_platform`, `pico_aon_timer`, `pico_low_power`,
-`hardware_structs`, `hardware_regs`, and `hardware_powman` (RP2350 only).
+`hardware_sync`, `pico_runtime_init`, `pico_platform`, `pico_aon_timer`, `hardware_structs`,
+`hardware_regs`, and `hardware_powman` (RP2350 only).
 
 ## Serial / USB behavior
 

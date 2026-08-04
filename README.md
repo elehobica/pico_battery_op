@@ -275,8 +275,8 @@ floating enabled input keeps leaking current. To minimize that leakage, call
 
 The library never touches its own pins, so an application only needs to manage its own. The sweep is
 **destructive and does not save pad state**: re-initialize any pin you let go (not in `app_hold_mask`)
-after wake, in `on_exit_dormant()`. Requires the `pico_low_power` library (Pico SDK 2.3.0+), which the
-`INTERFACE` target links transitively - no extra linkage in your app.
+after wake, in `on_exit_dormant()`. It uses only `hardware_gpio`, so there is no extra dependency to
+link in your app.
 
 ```c
 // Pins your application drives (examples).

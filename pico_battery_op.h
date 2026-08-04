@@ -147,7 +147,7 @@ uint32_t pbo_get_dormant_reserved_pin_mask(void);
 // from the on_enter_dormant() callback. Pass in app_hold_mask any application pin that must
 // keep driving its level through dormant. This is destructive and does NOT save pad state:
 // the application must re-initialize the pins it let go (not in app_hold_mask) after wake,
-// typically in on_exit_dormant(). Requires the pico_low_power library (Pico SDK 2.3.0+).
+// typically in on_exit_dormant(). Uses only hardware_gpio (no pico_low_power dependency).
 void pbo_dormant_set_low_leakage(uint32_t app_hold_mask);
 
 // === Power state machine ===

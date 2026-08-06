@@ -12,7 +12,7 @@ jobs:
   build-binaries:
     strategy:
       matrix:
-        project: [pico_battery_op]
+        project: [battery_op_basic, battery_op_with_ssd1306]
         build: [build, build2]
         include:
           - build: build
@@ -32,7 +32,7 @@ jobs:
       - name: Build
         uses: ./.github/actions/build-and-rename
         with:
-          path: .
+          path: samples/${{ matrix.project }}
           build: ${{ matrix.build }}
           platform: ${{ matrix.platform }}
           board: ${{ matrix.board }}

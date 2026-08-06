@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased]
 ### Added
 * Add workflow to build binaries
+* Add docker_build.sh
+* Add pbo_dormant_set_low_leakage() / pbo_get_dormant_reserved_pin_mask() to lower dormant current
+### Changed
+* Move PIN_POWER_SW from GP21 to GP28
+* Set internal pullup on PIN_POWER_SW
+* Move PIN_POWER_KEEP from GP19 to GP27
+* Support pico-sdk 2.3.0
+* Replace ported 'recover_from_sleep' clock restore with the SDK sleep_power_up()
+### Fixed
+* Fix build with newer Pico SDK where PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS is no longer exposed
 
 ## [1.0.1] - 2025-03-10
 ### Added

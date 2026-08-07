@@ -24,6 +24,11 @@ The library owns **only** power management. Presentation (OLED, LED), peripheral
 and product-specific UX live in the application. See the example projects under
 [samples/](samples/).
 
+**Arduino users**: the same library is published for the
+[arduino-pico](https://github.com/earlephilhower/arduino-pico) core as
+[pico_battery_op_arduino](https://github.com/elehobica/pico_battery_op_arduino). The `pbo_*` API is
+identical - see [Using the library in your own project](#using-the-library-in-your-own-project).
+
 ## Required external circuit
 The library assumes a specific discrete power-management circuit (power push switch, DC/DC enable control for power keep and charging circuit, etc.). It is **mandatory** - many code paths depend on the
 wiring. A dedicated PCB providing the library's base functionality is available; see its schematic
@@ -324,6 +329,30 @@ while (true) {
 }
 ```
 See the example projects under [samples/](samples/) for complete examples.
+
+**Arduino.** For the Arduino IDE, install **pico_battery_op** from the Library Manager (or from
+[pico_battery_op_arduino](https://github.com/elehobica/pico_battery_op_arduino)) and open
+`File > Examples > pico_battery_op > battery_op_basic`. It is this library repackaged for the
+[arduino-pico](https://github.com/earlephilhower/arduino-pico) core - the `pbo_*` API is the same,
+only the main loop takes Arduino's `setup()` / `loop()` shape:
+
+```c++
+#include "pico_battery_op.h"
+
+void setup() {
+    pbo_init(nullptr);   // nullptr -> all defaults
+    pbo_start();
+}
+
+void loop() {
+    pbo_process();       // runs the power state machine (may block while dormant)
+    delay(50);
+}
+```
+
+That repository's sources are **generated from this one**, so report issues and send pull requests
+here. Its README covers what is specific to the Arduino build (vendored pico-extras sources, Serial /
+USB behavior under the core).
 
 ## How to build with docker image
 * Builds the firmware inside [pico-sdk-dev-docker:sdk-2.3.0](https://hub.docker.com/r/elehobica/pico-sdk-dev-docker) (same image used by CI). Requires Docker; no local Pico SDK setup is needed.

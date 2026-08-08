@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 * Move PIN_POWER_KEEP from GP19 to GP27
 * Support pico-sdk 2.3.0
 * Replace ported 'recover_from_sleep' clock restore with the SDK sleep_power_up()
+* Drop Pico W / Pico 2 W support claim (GP23 / GP24 / GP25 / GP29 are owned by the CYW43 wireless chip)
 ### Fixed
 * Fix build with newer Pico SDK where PICO_STDIO_USB_RESET_RESET_TO_FLASH_DELAY_MS is no longer exposed
 

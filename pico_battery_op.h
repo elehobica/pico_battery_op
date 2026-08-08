@@ -13,6 +13,10 @@
 extern "C" {
 #endif
 
+// Supported boards: Raspberry Pi Pico (RP2040) and Pico 2 (RP2350) only.
+// Pico W / Pico 2 W are NOT supported: the CYW43439 wireless chip uses the GPIOs this library
+// fixes for PIN_DCDC_PSM_CTRL / PIN_USB_POWER_DETECT / PIN_BATT_LVL.
+
 // Terminology: this library has two low-power operations, both running on the RP2 "dormant"
 // mode (the Pico SDK's term, sleep_goto_dormant_until_pin()):
 //   - "Sleep"    : a PboStateActive operation (a POWER double push); POWER_KEEP stays held.

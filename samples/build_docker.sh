@@ -44,8 +44,8 @@ The sample to build is taken from the current working directory. Run this
 script from inside the sample folder you want to build.
 
 Targets:
-  pico    Build for Pico / Pico W       (rp2040, output: build/)
-  pico2   Build for Pico 2 / Pico 2 W   (rp2350, output: build2/)
+  pico    Build for Pico     (rp2040, output: build/)
+  pico2   Build for Pico 2   (rp2350, output: build2/)
   all     Build both (default)
 
 Options:

@@ -24,6 +24,9 @@ The library owns **only** power management. Presentation (OLED, LED), peripheral
 and product-specific UX live in the application. See the example projects under
 [samples/](samples/).
 
+**Supported boards**: Raspberry Pi Pico (RP2040) and Pico 2 (RP2350) only.
+Pico W / Pico 2 W are **not supported** (the library's fixed GPIOs are used by the wireless chip).
+
 **Arduino users**: the same library is published for the
 [arduino-pico](https://github.com/earlephilhower/arduino-pico) core as
 [pico_battery_op_arduino](https://github.com/elehobica/pico_battery_op_arduino). The `pbo_*` API is
@@ -361,10 +364,10 @@ USB behavior under the core).
 $ git clone -b main https://github.com/elehobica/pico_battery_op.git
 $ cd pico_battery_op/samples/xxxx
 $ ../build_docker.sh           # build both targets (default)
-$ ../build_docker.sh pico      # build only Pico / Pico W      -> build/xxxx.uf2
-$ ../build_docker.sh pico2     # build only Pico 2 / Pico 2 W  -> build2/xxxx.uf2
+$ ../build_docker.sh pico      # build only Pico    -> build/xxxx.uf2
+$ ../build_docker.sh pico2     # build only Pico 2  -> build2/xxxx.uf2
 ```
-* Outputs: `build/xxxx.uf2` (Pico / Pico W), `build2/xxxx.uf2` (Pico 2 / Pico 2 W)
+* Outputs: `build/xxxx.uf2` (Pico), `build2/xxxx.uf2` (Pico 2)
 * Download "*.uf2" on RPI-RP2 or RP2350 drive
 
 ## How to build in local
